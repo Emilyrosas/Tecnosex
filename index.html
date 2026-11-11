@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TECNOSEX · cinco mundos</title>
+  <link rel="stylesheet" href="style.css">
+
+  <!-- 1) A-Frame (la librería 3D) -->
+  <script src="https://aframe.io/releases/1.8.0/aframe.min.js"></script>
+  <!-- 2) El núcleo: ajustes, herramientas, mundos, portales, HUD, sonido -->
+  <script src="c.js"></script>
+  <!-- 3) Un archivo por mundo. Si creas un mundo nuevo, añade aquí su <script>. -->
+  <script src="mundos/m1-incubadora.js"></script>
+  <script src="mundos/m2-llanura.js"></script>
+  <script src="mundos/m3-fabrica.js"></script>
+  <script src="mundos/m4-torre.js"></script>
+  <script src="mundos/m5-mausoleo.js"></script>
+</head>
+<body>
+
+  <!--
+  ============================================================================
+   CÓMO FUNCIONA ESTE ARCHIVO
+  ============================================================================
+   Hay 5 bloques  <a-entity mundo="...">.  Cada uno es un mundo COMPLETO e
+   independiente: solo se ve el que está activo; los demás están ocultos y
+   pausados (no gastan rendimiento).
+
+   Las opciones de cada  mundo="..."  son:
+     nombre · descripcion      → el título que aparece al entrar
+     entrada: x y z            → dónde apareces        mirar: grados (0 = hacia -Z)
+     velocidad                 → metros por segundo al caminar
+     caja: x 0 z + centro      → límite rectangular (te frena en los muros)
+     limite + centro           → límite circular (si caja es 0)
+     niebla · densidad         → color y espesor de la niebla (¡define el ambiente!)
+     fondo · cieloArriba / cieloHorizonte / cieloAbajo → colores del cielo
+     tono · brillo · campanas  → el sonido: nota grave (Hz), brillo y campanitas
+
+   Dentro de cada mundo van sus luces y sus piezas. Las piezas son componentes
+   (ver c.js y /mundos): <a-entity incubadora>, <a-entity torre="...">, etc.
+   Para mover algo: cambia su  position="x y z"   (y = altura).
+
+   Los portales (<a-entity portal>) llevan de un mundo a otro:
+     destino: número del mundo (1-5) · etiqueta: texto · color · tamano · radio
+
+   PARA AÑADIR UN MUNDO NUEVO:
+     1. Copia un bloque <a-entity mundo=...> entero y cambia sus opciones.
+     2. Pon sus luces y piezas dentro. Un portal con destino: 6 lo conecta.
+     3. Aparecerá solo en el menú y con la tecla 6.
+
+   LUCES (A-Frame): light="type: ambient | hemisphere | directional | point"
+     ambient       → luz pareja en todo (evita el negro total)
+     hemisphere    → cielo/suelo (color y groundColor)
+     directional   → sol (viene de la dirección de su position)
+     point         → bombilla (distance = alcance). ¡Cada una pesa! Pocas.
+
+   TECLAS:  WASD / flechas caminar · arrastra el ratón para mirar · 1-5 mundos
+            Q calidad · M sonido · H ocultar interfaz · VR: botón de las gafas
+  ============================================================================
+  -->
+
+  <a-scene
+      ambiente gestor-mundos ambiente-sonoro hud rendimiento
+      loading-screen="dotsColor: #ff3d9a; backgroundColor: #03070a"
+      renderer="antialias: true">
+
+    <!-- El cielo es compartido: el gestor lo repinta con los colores de cada mundo -->
+    <a-entity cielo></a-entity>
+
+    <!-- ═════════ JUGADOR (rig) ═════════
+         El rig se mueve; la cámara va dentro (así funciona igual en pantalla y en VR).
+         Altura de ojos = y de la cámara. Los mandos son para VR. -->
+    <a-entity id="jugador" caminar limites position="0 0 20">
+      <a-entity id="camara" camera="fov: 78; far: 700" look-controls="pointerLockEnabled: false" position="0 1.6 0"></a-entity>
+      <a-entity id="mano-izq" laser-controls="hand: left" raycaster="objects: [data-clic]"></a-entity>
+      <a-entity id="mano-der" laser-controls="hand: right" raycaster="objects: [data-clic]"></a-entity>
+    </a-entity>
+
+
+    <!-- ╔════════════════════════════════════════════════════════════════════╗
+         ║  MUNDO 1 · INCUBADORA — oscuro, agobiante, cápsulas                ║
+         ╚════════════════════════════════════════════════════════════════════╝ -->
+    <a-entity mundo="nombre: Incubadora; descripcion: no hables alto, están durmiendo;
+                     entrada: 0 0 19; mirar: 0; velocidad: 3;
+                     caja: 3.6 0 27; centro: 0 0 -6;
+                     fondo: #010304; niebla: #03090a; densidad: 0.085;
+                     cieloArriba: #010203; cieloHorizonte: #020608; cieloAbajo: #010203;
+                     tono: 41; brillo: 260; campanas: 0.2">
+
+      <a-entity light="type: ambient; color: #3a5a60; intensity: 0.8"></a-entity>
+
+      <!-- La sala y las cápsulas (opciones en m1-incubadora.js) -->
+      <a-entity incubadora="parejas: 9; ocupadas: 0.72"></a-entity>
+
+      <!-- Motas de polvo flotando en el aire húmedo -->
+      <a-entity brillos="cantidad: 160; area: 8 3.4 56; velocidad: 0.04; tamano: 0.07; colores: #9fffe0,#ffffff" position="0 0 -6"></a-entity>
+
+      <a-entity portal="destino: 2; etiqueta: campo abierto; color: #7dffd8; tamano: 2.8; radio: 1.8" position="0 1.6 -31.6"></a-entity>
+    </a-entity>
+
+
+    <!-- ╔════════════════════════════════════════════════════════════════════╗
+         ║  MUNDO 2 · LLANURA — campo abierto, soleado, ruinas brutalistas     ║
+         ╚════════════════════════════════════════════════════════════════════╝ -->
+    <a-entity mundo="nombre: Llanura; descripcion: alguien dejó todo esto encendido;
+                     entrada: 0 0 31; mirar: 0; velocidad: 5.5;
+                     limite: 125; centro: 0 0 -25;
+                     fondo: #9cc9e6; niebla: #cfe4ee; densidad: 0.0042;
+                     cieloArriba: #3f86d8; cieloHorizonte: #d6ecf6; cieloAbajo: #9dc7a1;
+                     tono: 98; brillo: 1100; campanas: 1">
+
+      <a-entity light="type: directional; color: #fff1d6; intensity: 3; castShadow: false" position="60 80 30"></a-entity>
+      <a-entity light="type: hemisphere; color: #a8d4ff; groundColor: #5a7a3a; intensity: 1.6"></a-entity>
+
+      <a-entity terreno="pasto: 3000; piedras: 26"></a-entity>
+      <a-entity cielo-vivo="nubes: 14"></a-entity>
+      <a-entity brutalismo="filas: 7; columnas: 9" position="0 0 -48"></a-entity>
+
+      <!-- Fábricas abandonadas en el horizonte (sus posiciones están sobre zonas planas: ver CONFIG.llanura.planos) -->
+      <a-entity ruinas-fabrica="ancho: 34; chimeneas: 2" position="-78 0 -52" rotation="0 20 0"></a-entity>
+      <a-entity ruinas-fabrica="ancho: 40; largo: 26; alto: 12; dientes: 5; chimeneas: 3; semilla: 3" position="72 0 -78" rotation="0 -25 0"></a-entity>
+
+      <!-- Un ordenador en un escritorio de hierro, solo en el campo -->
+      <a-entity escritorio-retro="texto: > hay alguien ahi?" position="7 0 22" rotation="0 -35 0"></a-entity>
+
+      <!-- Polen flotando -->
+      <a-entity brillos="cantidad: 220; area: 90 7 130; velocidad: 0.08; tamano: 0.1; colores: #ffffff,#fff3c4,#ffd0e0" position="0 0 -20"></a-entity>
+
+      <a-entity portal="destino: 3; etiqueta: la fábrica; color: #9fe8ff; tamano: 10.8; radio: 3.5; opacidad: 0.8" position="0 5.6 -83.6"></a-entity>
+    </a-entity>
+
+
+    <!-- ╔════════════════════════════════════════════════════════════════════╗
+         ║  MUNDO 3 · FÁBRICA — interior frío, cables, tuberías, ordenadores   ║
+         ╚════════════════════════════════════════════════════════════════════╝ -->
+    <a-entity mundo="nombre: Fábrica; descripcion: el sol entra por donde ya no hay techo;
+                     entrada: 0 0 29; mirar: 0; velocidad: 4;
+                     caja: 21 0 31; centro: 0 0 0;
+                     fondo: #8fa3ac; niebla: #9fb1b8; densidad: 0.016;
+                     cieloArriba: #7f98a6; cieloHorizonte: #b9c8cf; cieloAbajo: #6f7f86;
+                     tono: 73; brillo: 420; campanas: 0.4">
+
+      <a-entity light="type: directional; color: #dff0ff; intensity: 2.6" position="30 60 10"></a-entity>
+      <a-entity light="type: hemisphere; color: #9fb7c4; groundColor: #3a4540; intensity: 0.9"></a-entity>
+      <a-entity light="type: ambient; color: #6a8088; intensity: 0.4"></a-entity>
+      <a-entity light="type: point; color: #7fe3ff; intensity: 22; distance: 16; decay: 2" position="-8 2.8 6"></a-entity>
+
+      <a-entity fabrica="ancho: 46; largo: 66; alto: 15; huecos: 9"></a-entity>
+      <a-entity racks-pc="filas: 2; porFila: 7; monitores: 12" position="-8 0 6"></a-entity>
+      <a-entity tuberias="cantidad: 14; columnas: 8"></a-entity>
+
+      <!-- Cables colgando del techo (el origen de cableado es el techo: y = 14.4) -->
+      <a-entity cableado="cantidad: 40; ancho: 40; largo: 60; caida: 3; grosor: 0.04; color: #151b1d" position="0 14.4 0"></a-entity>
+      <a-entity cableado="cantidad: 10; ancho: 40; largo: 60; caida: 4; grosor: 0.03; color: #ff4a6a; semilla: 3" position="0 14.4 0"></a-entity>
+
+      <!-- La naturaleza se cuela -->
+      <a-entity planta="hojas: 14; alto: 1.6; maceta: false; semilla: 31" position="-20 0 10"></a-entity>
+      <a-entity planta="hojas: 12; alto: 1.3; flores: 4; colorFlor: #ffd0e0; maceta: false; semilla: 32" position="19 0 -20"></a-entity>
+      <a-entity planta="hojas: 16; alto: 1.8; maceta: false; semilla: 33" position="-18 0 -26"></a-entity>
+      <a-entity planta="hojas: 10; alto: 1.2; maceta: false; semilla: 34" position="14 0 22"></a-entity>
+
+      <!-- Polvo en los rayos de sol -->
+      <a-entity brillos="cantidad: 220; area: 40 14 60; velocidad: 0.05; tamano: 0.1; colores: #ffffff,#cfe8ff" position="0 0 0"></a-entity>
+
+      <a-entity portal="destino: 4; etiqueta: afuera; color: #9fe8ff; tamano: 3.2; radio: 2.2" position="0 1.8 -31.2"></a-entity>
+    </a-entity>
+
+
+    <!-- ╔════════════════════════════════════════════════════════════════════╗
+         ║  MUNDO 4 · LA TORRE (exterior) — mirar hacia arriba desde sus pies  ║
+         ╚════════════════════════════════════════════════════════════════════╝ -->
+    <a-entity mundo="nombre: La Torre; descripcion: no se ve la cima, nunca se vio;
+                     entrada: 0 0 2; mirar: 0; velocidad: 5;
+                     caja: 42 0 52; centro: 0 0 -30;
+                     fondo: #2e2430; niebla: #41323f; densidad: 0.0042;
+                     cieloArriba: #070d10; cieloHorizonte: #6a4b5b; cieloAbajo: #2a1d26;
+                     tono: 49; brillo: 300; campanas: 0.15">
+
+      <a-entity light="type: hemisphere; color: #9a7f9a; groundColor: #1a1418; intensity: 1.5"></a-entity>
+      <a-entity light="type: directional; color: #ffb0c8; intensity: 1.8" position="-60 50 60"></a-entity>
+      <a-entity light="type: ambient; color: #4a3a4a; intensity: 0.8"></a-entity>
+
+      <a-entity plaza="bolardos: 14"></a-entity>
+      <a-entity torre="pisos: 70:70,58:100,46:110,34:120" position="0 0 -110"></a-entity>
+      <a-entity ciudad-lejana="cantidad: 46"></a-entity>
+      <a-entity reflectores="altura: 400" position="0 0 -110"></a-entity>
+
+      <!-- Camino de luz hasta la puerta -->
+      <a-entity senda="desde: 0 0 -8; hasta: 0 0 -68; color: #ff7fb5; separacion: 2.2"></a-entity>
+
+      <!-- Ceniza que cae -->
+      <a-entity brillos="cantidad: 500; area: 90 40 130; velocidad: -1.2; tamano: 0.12; parpadeo: 0; colores: #b8a8b8,#8a7a8a,#d8c8d8" position="0 0 -30"></a-entity>
+
+      <!-- La puerta circular está a z = -110 + 35 + 2.4 = -72.6 y a 13 m de altura -->
+      <a-entity portal="destino: 5; etiqueta: entrar; color: #ff3d9a; tamano: 24; radio: 6; opacidad: 0.4" position="0 13.1 -72.4"></a-entity>
+    </a-entity>
+
+
+    <!-- ╔════════════════════════════════════════════════════════════════════╗
+         ║  MUNDO 5 · MAUSOLEO — dentro de la torre, cuerpos y una orbe        ║
+         ╚════════════════════════════════════════════════════════════════════╝ -->
+    <a-entity mundo="nombre: Mausoleo; descripcion: nadie se fue, la orbe te vio llegar;
+                     entrada: 0 0 36; mirar: 0; velocidad: 4;
+                     caja: 24 0 39; centro: 0 0 0;
+                     fondo: #05090a; niebla: #0c1416; densidad: 0.02;
+                     cieloArriba: #020507; cieloHorizonte: #060d0f; cieloAbajo: #020507;
+                     tono: 36; brillo: 220; campanas: 0.2">
+
+      <a-entity light="type: ambient; color: #5a8a90; intensity: 2.4"></a-entity>
+      <a-entity light="type: hemisphere; color: #7aa0a0; groundColor: #2a1a20; intensity: 1.8"></a-entity>
+
+      <a-entity salon-brutal="ancho: 56; largo: 84; alto: 34"></a-entity>
+      <a-entity cuerpos-robot="cantidad: 220; colgados: 14"></a-entity>
+      <a-entity orbe-ojo="radio: 1.6" position="0 3.4 -10"></a-entity>
+
+      <a-entity cableado="cantidad: 60; ancho: 48; largo: 76; caida: 6; grosor: 0.05; color: #0d1112" position="0 34 0"></a-entity>
+      <a-entity brillos="cantidad: 200; area: 50 30 80; velocidad: 0.03; tamano: 0.1; colores: #cfe8e0,#ffd0e0" position="0 0 0"></a-entity>
+
+      <a-entity portal="destino: 1; etiqueta: despertar; color: #ffd0e0; tamano: 15; radio: 4; opacidad: 0.5" position="0 8.5 -40.6"></a-entity>
+    </a-entity>
+
+  </a-scene>
+
+
+  <!-- ═════════ INTERFAZ (se estiliza en style.css) ═════════ -->
+  <div id="hud">
+    <h1>TECNOSEX</h1>
+    <ol id="hud-mundos"></ol>
+    <p class="ayuda">WASD caminar · arrastra para mirar<br>1–5 mundos · M sonido · Q calidad · H ocultar</p>
+  </div>
+  <div id="hud-actual"></div>
+  <div id="aviso"></div>
+  <div id="fundido"></div>
+
+  <div id="inicio">
+    <div class="caja">
+      <h1>TECNOSEX</h1>
+      <p>cinco mundos, una sola caída</p>
+      <button id="entrar">entrar</button>
+      <small>auriculares recomendados</small>
+    </div>
+  </div>
+
+</body>
+</html>
