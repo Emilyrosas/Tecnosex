@@ -1,239 +1,166 @@
 /* ==========================================================================
-   MUNDO 3 · FÁBRICA
-   El interior de una nave industrial abandonada. Frío, húmedo, lleno de
-   tuberías, cables y ordenadores viejos. La luz del sol entra por el techo roto
-   y por los agujeros redondos de la pared.
-
-   Piezas:  fabrica · racks-pc · tuberias   (+ cableado, planta, brillos y
-            rayos-luz que vienen del núcleo c.js)
-
-   QUÉ APRENDER AQUÍ
-     · Rayos de luz falsos: láminas con degradado que SUMAN luz (crearRayos).
-       Mucho más baratos que luces/sombras reales y se ven igual de bien.
-     · InstancedMesh con materiales distintos por cara (los racks).
-     · Tuberías: una polilínea con esquinas redondeadas → TubeGeometry.
+   MUNDO 3 · LA FÁBRICA FRÍA          (camino 1: "Fundirme con la máquina")
+   --------------------------------------------------------------------------
+   Interior de una fábrica abandonada: cables, tuberías, servidores y
+   computadoras viejas que siguen escribiendo solas. Espacio frío, azul-gris,
+   iluminado por el sol que entra en diagonal por los ventanales de la izquierda.
+   Al fondo, un portón de luz → Mundo 4 (la torre).
    ========================================================================== */
 (function () {
-  'use strict';
-  const TX = window.TX;
-  const { THREE, rng, lienzo, texturaBrillo, halo, fusionar, colorearVertices, mover, cablesColgantes, mat, cajaUV, texturaConcreto, texturaEstatica, crearRayos } = TX;
+  const THREE = AFRAME.THREE;
 
-  /* ── fabrica: la nave (suelo, muros, techo con huecos, vigas, rayos de sol) ───
-     <a-entity fabrica="ancho: 46; largo: 66; alto: 15; huecos: 9">              */
-  AFRAME.registerComponent('fabrica', {
-    schema: {
-      ancho: { default: 46 }, largo: { default: 66 }, alto: { default: 15 },
-      celda: { default: 8 },             // tamaño de cada panel del techo
-      huecos: { default: 9 },            // paneles que faltan (por ahí entra el sol)
-      inclinacion: { default: -14 },     // ángulo del sol (grados)
-      colorRayo: { default: '#e6f6ff' },
-      opacidadRayo: { default: 0.17 },
-      semilla: { default: 31 }
-    },
-    init: function () {
-      const d = this.data, R = rng(d.semilla), raiz = new THREE.Group(), hx = d.ancho / 2, hz = d.largo / 2;
+  const A = {
+    ancho: 20, largo: 34, alto: 9,   // la nave industrial (metros)
+    ventanas: 6,                     // ventanales en la pared izquierda
+    racks: 22,                       // servidores en la pared derecha
+    cables: 60,
+    colorSol: '#e6eeff',
+    colorPantallas: '#9cffd0',
+    direccionSol: [-1, 0.75, 0.2],   // de dónde viene el sol (−X = izquierda)
+  };
 
-      /* 1 · suelo y muros de hormigón frío con musgo */
-      const texF = texturaConcreto({ base: '#5e6b70', mancha: '#3f6a52', intensidad: 1, semilla: 6 });
-      const matMuro = mat.estandar('#ffffff', { map: texF, roughness: 1 });
-      const suelo = new THREE.Mesh(new THREE.PlaneGeometry(d.ancho, d.largo), (() => {
-        const t = texF.clone(); t.repeat.set(d.ancho / 6, d.largo / 6); t.needsUpdate = true;
-        return mat.estandar('#ffffff', { map: t, roughness: 0.8 });
-      })());
-      suelo.rotation.x = -Math.PI / 2; raiz.add(suelo);
-      const muro = (w, h, dp, x, y, z) => { const m = new THREE.Mesh(cajaUV(w, h, dp, 6), matMuro); m.position.set(x, y, z); raiz.add(m); };
-      muro(0.6, d.alto, d.largo, -hx - 0.3, d.alto / 2, 0);
-      muro(0.6, d.alto, d.largo, hx + 0.3, d.alto / 2, 0);
-      muro(d.ancho + 1.2, d.alto, 0.6, 0, d.alto / 2, -hz - 0.3);
-      muro(d.ancho + 1.2, d.alto, 0.6, 0, d.alto / 2, hz + 0.3);
+  TECNO.registrarMundo({
+    id: 3,
+    cielo: { arriba: '#5d7088', horizonte: '#d6dde3', abajo: '#40505c', sol: { color: '#ffffff', alto: 35, giro: 80, tamano: 0.8 } },
+    niebla: { color: '#8f9ba6', densidad: 0.03 },
+    exposicion: 1.05,
+    reflejos: 0.5,
+    inicio: { pos: [0, 0, 9], mirar: 0 },
+    limites: { minX: -9.3, maxX: 9.3, minZ: -22.5, maxZ: 10.3 },
 
-      // charcos oscuros y brillantes
-      const charcos = [];
-      for (let i = 0; i < 6; i++) charcos.push(mover(new THREE.CircleGeometry(1, 20), [(R() - 0.5) * (d.ancho - 8), 0.025, (R() - 0.5) * (d.largo - 8)], [-Math.PI / 2, 0, 0], [2 + R() * 3, 2 + R() * 2.5, 1]));
-      raiz.add(new THREE.Mesh(fusionar(charcos), mat.estandar('#0f1d24', { roughness: 0.05, metalness: 0.9, emissive: '#0b2a33', emissiveIntensity: 0.5 })));
+    construir(H) {
+      const W = A.ancho, L = A.largo, T = A.alto, zc = -6, z1 = zc + L / 2, z0 = zc - L / 2;   // z0 = fondo, z1 = entrada
 
-      /* 2 · techo: rejilla de paneles; los que faltan son los huecos del sol */
-      const cols = Math.round(d.ancho / d.celda), filas = Math.round(d.largo / d.celda);
-      const cw = d.ancho / cols, cr = d.largo / filas;
-      const celdas = [];
-      for (let i = 0; i < cols; i++) for (let j = 0; j < filas; j++) celdas.push([i, j]);
-      const huecos = [];
-      for (let k = 0; k < d.huecos && celdas.length; k++) huecos.push(celdas.splice(Math.floor(R() * celdas.length), 1)[0]);
-      const paneles = celdas.map(([i, j]) => mover(cajaUV(cw - 0.1, 0.4, cr - 0.1, 6), [-hx + cw * (i + 0.5), d.alto + 0.2, -hz + cr * (j + 0.5)]));
-      raiz.add(new THREE.Mesh(fusionar(paneles), matMuro));
+      // 1 · LUCES ─────────────────────────────────────────────────────────
+      H.luzHemisferio('#a9bcd6', '#1c2026', 0.9);
+      H.luzAmbiente('#3c4652', 0.5);
+      H.luzSol(A.colorSol, 3.4, A.direccionSol, { sombra: true, area: 24, centro: [0, 0, zc] });
 
-      // vigas de acero
-      const vigas = [];
-      for (let j = 0; j <= filas; j++) vigas.push(mover(new THREE.BoxGeometry(d.ancho, 0.6, 0.5), [0, d.alto - 0.3, -hz + j * cr]));
-      for (let i = 0; i <= cols; i++) vigas.push(mover(new THREE.BoxGeometry(0.5, 0.6, d.largo), [-hx + i * cw, d.alto - 0.3, 0]));
-      raiz.add(new THREE.Mesh(fusionar(vigas), mat.estandar('#2b3438', { metalness: 0.7, roughness: 0.55 })));
+      // 2 · PISO, TECHO Y MUROS ───────────────────────────────────────────
+      const concreto = H.mat({ textura: 'concreto', repetir: [2, 1], color: '#a3abb2', rugosidad: 0.9 });
+      H.plano({ ancho: W, alto: L, rot: [-90, 0, 0], pos: [0, 0, zc], textura: 'concreto', repetir: [W / 4, L / 4], color: '#8c949a', rugosidad: 0.85 });
+      // charcos (reflejan el cielo)
+      for (let i = 0; i < 5; i++) H.circulo({ radio: H.azar(0.8, 2), rot: [-90, 0, 0], pos: [H.azar(-7, 5), 0.012, H.azar(-20, 8)], esc: [H.azar(1, 1.8), 1, 1], color: '#7f8a94', metal: 1, rugosidad: 0.08, reflejo: 2 });
+      H.plano({ ancho: W, alto: L, rot: [90, 0, 0], pos: [0, T, zc], color: '#2a2f35', rugosidad: 1 });
 
-      /* 3 · rayos de sol que entran por los huecos + manchas de luz en el suelo */
-      const posiciones = huecos.map(([i, j]) => new THREE.Vector3(-hx + cw * (i + 0.5), d.alto, -hz + cr * (j + 0.5)));
-      raiz.add(crearRayos({ posiciones: posiciones, alto: d.alto, ancho: cw * 0.85, inclinacion: d.inclinacion, color: d.colorRayo, opacidad: d.opacidadRayo }));
-      const desplaza = d.alto * Math.tan(d.inclinacion * Math.PI / 180);                  // cuánto se corre el rayo al llegar al suelo
-      const mancha = new THREE.PlaneGeometry(cw * 1.2, cr * 1.1);
-      const matMancha = new THREE.MeshBasicMaterial({ map: texturaBrillo(), color: d.colorRayo, transparent: true, opacity: 0.4, blending: THREE.AdditiveBlending, depthWrite: false });
-      posiciones.forEach(p => { const m = new THREE.Mesh(mancha, matMancha); m.rotation.x = -Math.PI / 2; m.position.set(p.x + desplaza, 0.04, p.z); raiz.add(m); });
-      this.posRayos = posiciones.map(p => new THREE.Vector3(p.x + desplaza, 0, p.z));
-
-      /* 4 · agujeros redondos en el muro este por donde entra la luz */
-      const discos = [], bordes = [];
-      for (let r = 0; r < 2; r++) for (let c = 0; c < 6; c++) {
-        const y = 6 + r * 4, z = -hz + 8 + c * ((d.largo - 16) / 5), x = hx - 0.02;
-        discos.push(mover(new THREE.CircleGeometry(1.1, 24), [x, y, z], [0, -Math.PI / 2, 0]));
-        bordes.push(mover(new THREE.TorusGeometry(1.15, 0.12, 6, 24), [x, y, z], [0, -Math.PI / 2, 0]));
-        if (r === 0 && c % 2 === 0) { const h = halo('#dff6ff', 7, 0.35); h.position.set(x - 0.5, y, z); raiz.add(h); }
-      }
-      raiz.add(new THREE.Mesh(fusionar(discos), mat.basico('#e8f7ff', { fog: false })));
-      raiz.add(new THREE.Mesh(fusionar(bordes), matMuro));
-
-      /* 5 · tanque central con pasarela */
-      const tx = 8, tz = -6, tanque = new THREE.Group(); tanque.position.set(tx, 0, tz);
-      const matTanque = mat.estandar('#4d6a6c', { roughness: 0.75, metalness: 0.4 });
-      const cil = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 3.2, 9, 28), matTanque); cil.position.y = 4.5; tanque.add(cil);
-      [1.5, 4.5, 7.5].forEach(y => { const b = new THREE.Mesh(new THREE.TorusGeometry(3.25, 0.12, 6, 28), mat.estandar('#2a3436', { metalness: 0.7 })); b.rotation.x = Math.PI / 2; b.position.y = y; tanque.add(b); });
-      const reja = lienzo(64, 64, (g, w, h) => { g.fillStyle = '#10181a'; g.fillRect(0, 0, w, h); g.strokeStyle = '#2f4246'; g.lineWidth = 3; for (let i = 0; i <= 4; i++) { g.beginPath(); g.moveTo(i * 16, 0); g.lineTo(i * 16, h); g.stroke(); g.beginPath(); g.moveTo(0, i * 16); g.lineTo(w, i * 16); g.stroke(); } });
-      reja.wrapS = reja.wrapT = THREE.RepeatWrapping; reja.repeat.set(6, 6);
-      const pasarela = new THREE.Mesh(new THREE.RingGeometry(3.3, 5.3, 36), mat.estandar('#ffffff', { map: reja, side: THREE.DoubleSide, roughness: 0.6, metalness: 0.5 }));
-      pasarela.rotation.x = -Math.PI / 2; pasarela.position.y = 5.5; tanque.add(pasarela);
-      const baranda = new THREE.Mesh(new THREE.TorusGeometry(5.25, 0.05, 5, 40), mat.estandar('#2a3436', { metalness: 0.7 })); baranda.rotation.x = Math.PI / 2; baranda.position.y = 6.5; tanque.add(baranda);
-      const escalera = [];
-      escalera.push(mover(new THREE.BoxGeometry(0.08, 5.5, 0.08), [-0.25, 2.75, 5.3]), mover(new THREE.BoxGeometry(0.08, 5.5, 0.08), [0.25, 2.75, 5.3]));
-      for (let k = 0; k < 11; k++) escalera.push(mover(new THREE.BoxGeometry(0.5, 0.05, 0.05), [0, 0.3 + k * 0.5, 5.3]));
-      tanque.add(new THREE.Mesh(fusionar(escalera), mat.estandar('#2a3436', { metalness: 0.7 })));
-      raiz.add(tanque);
-
-      this.el.setObject3D('mesh', raiz);
-    }
-  });
-
-  /* ── racks-pc: filas de servidores y mesas con monitores antiguos ───────────────
-     <a-entity racks-pc="filas: 2; porFila: 7" position="-6 0 10">               */
-  AFRAME.registerComponent('racks-pc', {
-    schema: {
-      filas: { default: 2 }, porFila: { default: 7 }, separacion: { default: 2.2 }, pasillo: { default: 5 },
-      monitores: { default: 12 }, derribados: { default: 3 }, semilla: { default: 14 }
-    },
-    init: function () {
-      const d = this.data, R = rng(d.semilla), raiz = new THREE.Group();
-
-      /* RACKS: cajas oscuras con panel de ledes. Una textura dibujada a mano; el
-         material tiene un arreglo de 6 (una por cara) para que solo el frente brille. */
-      const texPanel = lienzo(128, 256, (g, w, h) => {
-        g.fillStyle = '#0c1114'; g.fillRect(0, 0, w, h);
-        for (let r = 0; r < 12; r++) { g.fillStyle = '#141d22'; g.fillRect(8, 10 + r * 20, w - 16, 14); }
-        const cs = ['#38ff8a', '#7fe3ff', '#ff4a4a', '#ffbf4a'];
-        for (let i = 0; i < 60; i++) { g.fillStyle = cs[Math.floor(R() * cs.length)]; g.fillRect(12 + R() * (w - 28), 12 + Math.floor(R() * 12) * 20, 3, 3); }
+      const muros = [];
+      // pared izquierda (−X) con ventanales: un muro con HUECOS
+      const tramo = L / A.ventanas, huecos = [];
+      for (let i = 0; i < A.ventanas; i++) huecos.push({ centro: tramo * (i + 0.5), ancho: tramo - 1.4, base: 2.4, alto: 4.8 });
+      muros.push(...H.muro({ desde: [-W / 2, z1], hasta: [-W / 2, z0], alto: T, grosor: 0.5, huecos, modulo: 0.7 }));
+      // parteluces (marcos de los ventanales)
+      huecos.forEach(h => {
+        const z = z1 - h.centro;
+        muros.push(H.geo.caja({ ancho: 0.12, alto: h.alto, fondo: 0.12, pos: [-W / 2, h.base + h.alto / 2, z] }));
+        muros.push(H.geo.caja({ ancho: 0.1, alto: 0.1, fondo: h.ancho, pos: [-W / 2, h.base + h.alto * 0.62, z] }));
       });
-      const lado = mat.estandar('#1a2024', { metalness: 0.6, roughness: 0.5 });
-      const frente = mat.estandar('#ffffff', { map: texPanel, emissive: '#ffffff', emissiveMap: texPanel, emissiveIntensity: 0.9, roughness: 0.6 });
-      const geoRack = new THREE.BoxGeometry(0.9, 2.2, 0.9); geoRack.translate(0, 1.1, 0);
+      // pared derecha y pared de la entrada
+      muros.push(...H.muro({ desde: [W / 2, z0], hasta: [W / 2, z1], alto: T, grosor: 0.5, modulo: 4 }));
+      muros.push(...H.muro({ desde: [-W / 2, z1], hasta: [W / 2, z1], alto: T, grosor: 0.5, modulo: 4 }));
+      // pared del fondo con el PORTÓN
+      muros.push(...H.muro({ desde: [W / 2, z0], hasta: [-W / 2, z0], alto: T, grosor: 0.5, modulo: 1, huecos: [{ centro: W / 2, ancho: 5, base: 0, alto: 6 }] }));
+      // columnas
+      for (let z = z1 - 5; z > z0 + 2; z -= 6) for (const x of [-5, 5]) { muros.push(H.geo.caja({ ancho: 0.7, alto: T, fondo: 0.7, pos: [x, T / 2, z] })); H.solido(x, z, 0.8, 0.8); }
+      H.malla(H.fusionar(muros), concreto);
+
+      // 3 · ESTRUCTURA DE ACERO del techo (cerchas) ──────────────────────
+      const acero = [];
+      for (let z = z1 - 2; z > z0; z -= 4) {
+        acero.push(H.geo.caja({ ancho: W, alto: 0.2, fondo: 0.2, pos: [0, T - 1.3, z] }));
+        acero.push(H.geo.caja({ ancho: W, alto: 0.2, fondo: 0.2, pos: [0, T - 0.2, z] }));
+        for (let x = -W / 2 + 1; x < W / 2; x += 2) acero.push(H.geo.caja({ ancho: 0.08, alto: 1.5, fondo: 0.08, pos: [x, T - 0.75, z], rot: [0, 0, (x % 4 === 1 || x % 4 === -3) ? 36 : -36] }));
+      }
+      H.malla(H.fusionar(acero), H.mat({ color: '#4a535c', metal: 0.7, rugosidad: 0.5 }));
+
+      // 4 · TUBERÍAS en la pared derecha ─────────────────────────────────
+      const tubos = [];
+      for (const [y, r] of [[6.2, 0.35], [7.1, 0.25], [7.8, 0.18]]) tubos.push(H.geo.cilindro({ radio: r, alto: L, lados: 14, rot: [90, 0, 0], pos: [W / 2 - 0.7, y, zc] }));
+      for (let z = z1 - 4; z > z0 + 3; z -= 7) {
+        tubos.push(H.geo.cilindro({ radio: 0.25, alto: 5.6, lados: 12, pos: [W / 2 - 0.7, 2.8 + 0.25, z] }));
+        tubos.push(H.geo.toro({ radio: 0.4, grosor: 0.25, arco: 90, lados: 10, ladosTubo: 10, pos: [W / 2 - 0.7, 6.2 - 0.4, z + 0.4], rot: [0, 90, 0] }));
+        tubos.push(H.geo.cilindro({ radio: 0.32, alto: 0.25, lados: 12, pos: [W / 2 - 0.7, 1.4, z] }));   // válvula
+      }
+      H.malla(H.fusionar(tubos), H.mat({ color: '#5e6b75', metal: 0.65, rugosidad: 0.45, textura: 'metal', repetir: [1, 4] }));
+
+      // 5 · SERVIDORES (instancias) con luces que parpadean ──────────────
       const racks = [];
-      for (let f = 0; f < d.filas; f++) for (let i = 0; i < d.porFila; i++) {
-        if (R() < 0.1) continue;
-        const z = (f - (d.filas - 1) / 2) * (d.pasillo + 1);
-        racks.push({ x: (i - (d.porFila - 1) / 2) * d.separacion, z: z, yaw: f % 2 ? 0 : Math.PI });   // las filas se miran entre sí
+      for (let i = 0; i < A.racks; i++) racks.push({ pos: [W / 2 - 2.2, 1.1, z1 - 3 - i * 1.0], rot: [0, 0, 0] });
+      H.instancias(H.geo.caja({ ancho: 0.8, alto: 2.2, fondo: 0.9 }), H.mat({ color: '#1d2126', metal: 0.6, rugosidad: 0.4 }), racks);
+      const leds = H.tex('leds', [1, 2]);
+      H.instancias(H.geo.plano({ ancho: 0.82, alto: 2.0, rot: [0, -90, 0] }), H.mat({ basico: true, textura: leds }), racks.map(r => ({ pos: [r.pos[0] - 0.42, 1.1, r.pos[2]] })));
+      H.solido(W / 2 - 2.2, z1 - 3 - (A.racks - 1) / 2, 0.9, A.racks);
+      let parpadeo = 0;
+      H.animar((t, dt) => { parpadeo += dt; if (parpadeo > 0.35) { parpadeo = 0; leds.offset.y = Math.floor(Math.random() * 8) / 8; } });
+
+      // 6 · ESCRITORIOS CON COMPUTADORAS VIEJAS ──────────────────────────
+      const escritorios = [], monitores = [];
+      for (let fila = 0; fila < 3; fila++) for (let k = 0; k < 3; k++) {
+        const x = -6.3 + k * 2.6, z = 3 - fila * 5;
+        escritorios.push({ pos: [x, 0, z] });
+        const caido = H.azar() < 0.2;
+        monitores.push(caido
+          ? { pos: [x + H.azar(-1, 1), 0.25, z + 1.1], rot: [H.azar(-90, -60), H.azar(0, 360), 0] }
+          : { pos: [x + H.azar(-0.3, 0.3), 0.78, z], rot: [0, H.azar(-15, 15), 0] });
+        H.solido(x, z, 1.5, 0.8);
       }
-      const inst = new THREE.InstancedMesh(geoRack, [lado, lado, lado, lado, frente, frente], racks.length);
-      const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), p = new THREE.Vector3(), s = new THREE.Vector3(1, 1, 1);
-      racks.forEach((r, i) => {
-        const caido = i < d.derribados;                                           // los primeros están tumbados
-        e.set(0, r.yaw + (R() - 0.5) * 0.15, caido ? Math.PI / 2 * (R() < 0.5 ? 1 : -1) : 0); q.setFromEuler(e);
-        p.set(r.x, caido ? 0.45 : 0, r.z + (caido ? (R() - 0.5) * 2 : 0));
-        m4.compose(p, q, s); inst.setMatrixAt(i, m4);
+      const mesa = H.fusionar([
+        H.geo.caja({ ancho: 1.4, alto: 0.05, fondo: 0.7, pos: [0, 0.75, 0] }),
+        ...[[-0.65, -0.3], [0.65, -0.3], [-0.65, 0.3], [0.65, 0.3]].map(([x, z]) => H.geo.caja({ ancho: 0.05, alto: 0.75, fondo: 0.05, pos: [x, 0.375, z] })),
+      ]);
+      H.instancias(mesa, H.mat({ color: '#6b7178', metal: 0.5, rugosidad: 0.6 }), escritorios);
+      const crt = H.fusionar([
+        H.geo.caja({ ancho: 0.5, alto: 0.42, fondo: 0.4, pos: [0, 0.23, 0] }),
+        H.geo.caja({ ancho: 0.36, alto: 0.3, fondo: 0.25, pos: [0, 0.22, -0.3] }),
+        H.geo.caja({ ancho: 0.3, alto: 0.04, fondo: 0.3, pos: [0, 0.02, 0] }),
+      ]);
+      H.instancias(crt, H.mat({ color: '#b8b4aa', rugosidad: 0.7 }), monitores);
+      H.instancias(H.geo.plano({ ancho: 0.4, alto: 0.31, pos: [0, 0.24, 0.205] }), H.mat({ basico: true, textura: H.texPantalla(A.colorPantallas) }), monitores);
+
+      // 7 · LA MÁQUINA CENTRAL: un tanque enorme acostado ─────────────────
+      const maquina = [];
+      maquina.push(H.geo.cilindro({ radio: 1.8, alto: 7, lados: 28, rot: [0, 0, 90], pos: [0, 2.6, 0] }));
+      for (let x = -3; x <= 3; x += 1) maquina.push(H.geo.toro({ radio: 1.84, grosor: 0.08, lados: 32, rot: [0, 90, 0], pos: [x, 2.6, 0] }));
+      for (const x of [-2.5, 2.5]) maquina.push(H.geo.caja({ ancho: 0.6, alto: 1.6, fondo: 3, pos: [x, 0.8, 0] }));
+      for (const x of [-1.5, 0.5, 2]) maquina.push(H.geo.cilindro({ radio: 0.15, alto: T - 4.4, lados: 8, pos: [x, 4.4 + (T - 4.4) / 2, 0.6] }));
+      H.malla(H.fusionar(maquina), H.mat({ color: '#6d7a84', metal: 0.75, rugosidad: 0.35, textura: 'metal', repetir: [3, 1] }), { pos: [1.5, 0, -14] });
+      H.solido(1.5, -14, 7.6, 3.8);
+
+      // 8 · CABLES colgando de las cerchas ───────────────────────────────
+      const cables = [];
+      for (let i = 0; i < H.cantidad(A.cables); i++) {
+        const x = H.azar(-W / 2 + 1, W / 2 - 1), z = H.azar(z0 + 1, z1 - 1);
+        if (H.azar() < 0.25) {        // algunos llegan hasta el piso
+          cables.push(H.geo.tubo({ puntos: [[x, T - 1.3, z], [x + H.azar(-0.5, 0.5), T * 0.5, z + H.azar(-0.5, 0.5)], [x + H.azar(-1, 1), 0.05, z + H.azar(-1, 1)], [x + H.azar(-2, 2), 0.03, z + H.azar(-2, 2)]], radio: 0.025 }));
+        } else {
+          cables.push(H.geo.cable({ desde: [x, T - 1.3, z], hasta: [x + H.azar(-4, 4), T - 1.3, z + H.azar(-3, 3)], caida: H.azar(0.5, 3), radio: H.azar(0.015, 0.035) }));
+        }
+      }
+      H.malla(H.fusionar(cables), H.mat({ color: '#0d0f12', rugosidad: 0.4, metal: 0.3 }));
+
+      // 9 · TUBOS FLUORESCENTES (uno falla) ──────────────────────────────
+      const tubosLuz = [];
+      for (let z = z1 - 4; z > z0 + 2; z -= 8) tubosLuz.push(H.caja({ ancho: 0.08, alto: 0.06, fondo: 2.2, pos: [0, 5.6, z], basico: true, color: '#d8ecff' }));
+      const roto = tubosLuz[1];
+      H.animar(() => { roto.visible = Math.random() > 0.08; });
+
+      // 10 · RAYOS DE SOL que entran por los ventanales ──────────────────
+      const d = new THREE.Vector3(...A.direccionSol).normalize().negate();     // hacia dónde viaja la luz
+      const ejeX = new THREE.Vector3(0, 0, 1).addScaledVector(d, -d.z).normalize();
+      const base = new THREE.Matrix4().makeBasis(ejeX, new THREE.Vector3().crossVectors(d, ejeX), d);
+      const giro = new THREE.Quaternion().setFromRotationMatrix(base);
+      const matRayo = H.mat({ aditivo: true, color: '#cfdcff', opacidad: 0.05, doble: true });
+      huecos.forEach(h => {
+        const largo = 13, z = z1 - h.centro;
+        const rayo = H.caja({ ancho: h.ancho * 0.95, alto: h.alto * 0.9, fondo: largo, mat: matRayo });
+        rayo.position.set(-W / 2, h.base + h.alto / 2, z).addScaledVector(d, largo / 2);
+        rayo.quaternion.copy(giro);
+        // sin sombras reales, una mancha de luz falsa en el piso
+        if (!H.sombras()) H.plano({ ancho: 4.5, alto: h.ancho * 0.9, rot: [-90, 0, 0], pos: [-3.5, 0.02, z - 1], aditivo: true, textura: 'brillo', color: '#dfe8ff', opacidad: 0.35 });
       });
-      inst.frustumCulled = false; raiz.add(inst);
+      H.particulas({ cantidad: 380, centro: [-4, 3.5, zc], area: [10, 7, L - 2], color: '#dfe9ff', tamano: 0.035, velocidad: [0.05, 0.02, 0], vaiven: 0.06, opacidad: 0.7 });
 
-      /* MESAS con MONITORES (3 InstancedMesh: mesas, cuerpos, pantallas) */
-      const n = d.monitores;
-      const mesas = new THREE.InstancedMesh(new THREE.BoxGeometry(1.5, 0.75, 0.8), mat.estandar('#3a4144', { roughness: 0.8 }), n);
-      const cuerpos = new THREE.InstancedMesh(new THREE.BoxGeometry(0.5, 0.42, 0.46), mat.estandar('#b7b19f', { roughness: 0.8 }), n);
-      this.estatica = texturaEstatica();
-      const pantallas = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.38, 0.29), new THREE.MeshBasicMaterial({ map: this.estatica.textura }), n);
-      const cc = new THREE.Color(), tonos = ['#ffffff', '#9fd8ff', '#555555', '#000000'];
-      for (let i = 0; i < n; i++) {
-        const x = (R() - 0.5) * (d.separacion * d.porFila + 4), z = (R() < 0.5 ? -1 : 1) * (d.pasillo / 2 + 1.5 + R() * 3.5), yaw = (z > 0 ? Math.PI : 0) + (R() - 0.5) * 0.7;
-        e.set(0, yaw, 0); q.setFromEuler(e);
-        p.set(x, 0.375, z); m4.compose(p, q, s); mesas.setMatrixAt(i, m4);
-        const cos = Math.cos(yaw), sen = Math.sin(yaw);
-        p.set(x, 0.96, z); m4.compose(p, q, s); cuerpos.setMatrixAt(i, m4);
-        p.set(x + sen * 0.235, 0.98, z + cos * 0.235); m4.compose(p, q, s); pantallas.setMatrixAt(i, m4);
-        pantallas.setColorAt(i, cc.set(tonos[Math.floor(R() * tonos.length)]));      // algunas apagadas, otras azuladas
-      }
-      [mesas, cuerpos, pantallas].forEach(o => { o.frustumCulled = false; raiz.add(o); });
-
-      /* CABLES por el suelo: salen de lo alto de un rack y serpentean por el suelo */
-      const tr = [], tr2 = [];
-      racks.slice(d.derribados).forEach(r => {
-        if (R() < 0.5) return;
-        const a = new THREE.Vector3(r.x, 2.15, r.z), b = new THREE.Vector3(r.x + (R() - 0.5) * 6, 0.04, r.z + (R() - 0.5) * 5);
-        (R() < 0.2 ? tr2 : tr).push({ a: a, b: b, medio: new THREE.Vector3((a.x + b.x) / 2 + (R() - 0.5) * 2, 0.05, (a.z + b.z) / 2) });
-      });
-      if (tr.length)  raiz.add(new THREE.Mesh(cablesColgantes(tr, 0.035), mat.estandar('#101415', { roughness: 0.5 })));
-      if (tr2.length) raiz.add(new THREE.Mesh(cablesColgantes(tr2, 0.035), mat.basico('#ff4a6a')));
-
-      this.t = 0;
-      this.el.setObject3D('mesh', raiz);
+      // 11 · EL PORTÓN → MUNDO 4 ─────────────────────────────────────────
+      H.portal({ destino: 4, pos: [0, 0, z0 + 0.4], etiqueta: 'La torre', color: '#e6eeff', velo: '#cfd8e0', ancho: 4.2, alto: 5.6, radio: 1.6 });
     },
-    tick: function (t, dt) {
-      this.t += dt;
-      if (this.t > 120) { this.t = 0; this.estatica.actualizar(); }     // el ruido se redibuja ~8 veces por segundo
-    }
-  });
-
-  /* ── tuberias: haces de tubos con esquinas redondeadas por toda la nave ──────────
-     <a-entity tuberias="cantidad: 14; ancho: 44; largo: 62; alto: 14">           */
-  AFRAME.registerComponent('tuberias', {
-    schema: {
-      cantidad: { default: 14 }, ancho: { default: 44 }, largo: { default: 62 }, alto: { default: 14 },
-      columnas: { default: 8 }, semilla: { default: 19 }
-    },
-    init: function () {
-      const d = this.data, R = rng(d.semilla), V = (x, y, z) => new THREE.Vector3(x, y, z);
-      const geos = [], colores = ['#47585b', '#5b4a3a', '#2f4a4a', '#7e8a8c', '#3b3f44'];
-      const hx = d.ancho / 2 - 0.8, hz = d.largo / 2 - 0.8;
-
-      // un tubo = recorrido de segmentos rectos; en cada esquina se redondea con una curva de Bézier
-      function tubo(puntos, radio) {
-        const esq = 0.8 + radio * 2, cp = new THREE.CurvePath();
-        let prev = puntos[0].clone();
-        for (let i = 1; i < puntos.length - 1; i++) {
-          const p = puntos[i], a = p.clone().sub(puntos[i - 1]).normalize(), b = puntos[i + 1].clone().sub(p).normalize();
-          const antes = p.clone().addScaledVector(a, -esq), despues = p.clone().addScaledVector(b, esq);
-          cp.add(new THREE.LineCurve3(prev, antes)); cp.add(new THREE.QuadraticBezierCurve3(antes, p, despues)); prev = despues;
-        }
-        cp.add(new THREE.LineCurve3(prev, puntos[puntos.length - 1]));
-        return new THREE.TubeGeometry(cp, puntos.length * 14, radio, 8, false);
-      }
-
-      for (let i = 0; i < d.cantidad; i++) {
-        // recorrido aleatorio por ejes: arranca en un muro y gira en X, Y o Z
-        const lado = R() < 0.5 ? -1 : 1;
-        let x = lado * hx, y = 2 + R() * (d.alto - 4), z = (R() - 0.5) * (d.largo - 10);
-        const pts = [V(x, y, z)], ejes = ['z', 'y', 'x', 'z', 'y'];
-        let eje = ejes[Math.floor(R() * 3)];
-        for (let k = 0; k < 4; k++) {
-          const largoSeg = 5 + R() * 10, sg = R() < 0.5 ? -1 : 1;
-          if (eje === 'x') x = Math.max(-hx, Math.min(hx, x + (lado > 0 ? -1 : 1) * largoSeg));
-          if (eje === 'y') y = Math.max(1, Math.min(d.alto - 1.2, y + sg * largoSeg * 0.6));
-          if (eje === 'z') z = Math.max(-hz, Math.min(hz, z + sg * largoSeg));
-          const ult = pts[pts.length - 1];
-          if (ult.distanceTo(V(x, y, z)) > 2.5) pts.push(V(x, y, z));
-          eje = ['x', 'y', 'z'].filter(a => a !== eje)[Math.floor(R() * 2)];
-        }
-        if (pts.length >= 3) geos.push(colorearVertices(tubo(pts, 0.1 + R() * 0.2), colores[Math.floor(R() * colores.length)]));
-      }
-      // columnas verticales suelo→techo (haces de 2-3 tubos)
-      for (let i = 0; i < d.columnas; i++) {
-        const x = (R() - 0.5) * (d.ancho - 6), z = (R() - 0.5) * (d.largo - 6), n = 2 + Math.floor(R() * 2);
-        for (let k = 0; k < n; k++) {
-          const r = 0.12 + R() * 0.16;
-          geos.push(colorearVertices(mover(new THREE.CylinderGeometry(r, r, d.alto, 10, 1), [x + k * 0.45, d.alto / 2, z + (R() - 0.5) * 0.3]), colores[Math.floor(R() * colores.length)]));
-        }
-      }
-      // todas las geometrías deben tener los mismos atributos antes de fusionarse
-      this.el.setObject3D('mesh', new THREE.Mesh(fusionar(geos), mat.estandar('#ffffff', { vertexColors: true, roughness: 0.55, metalness: 0.6 })));
-    }
   });
 })();

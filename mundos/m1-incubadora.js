@@ -1,190 +1,169 @@
 /* ==========================================================================
-   MUNDO 1 · INCUBADORA
-   Un pasillo bajo, húmedo y opresivo lleno de cápsulas con cuerpos flotando.
-   Casi todo está oscuro: lo único que ves son las luces de las cápsulas.
+   MUNDO 1 · LA INCUBADORA
+   --------------------------------------------------------------------------
+   Un pasillo oscuro, de techo bajo, con cápsulas en filas. Dentro de cada una
+   flota un cuerpo encogido en líquido rosa. Cables negros cuelgan del techo y
+   se arrastran por el piso. Al fondo, una puerta de luz blanca → Mundo 2.
 
-   Pieza principal:  incubadora   (construye la sala entera + las cápsulas)
+   Referencias: cuerpos en fluido rosa, anillo de cables, piso tecnológico.
 
-   QUÉ APRENDER AQUÍ
-     · fusionar(): las 18 cápsulas comparten 6 mallas en total, aunque cada una
-       tiene base, tapa, cristal, líquido, leds y cables.
-     · colorearVertices(): cada cápsula tiene su color dentro de UNA misma malla.
-     · tick(): parpadeo aleatorio de luces y leds, y flotación de los cuerpos.
+   CÓMO ESTÁ ORGANIZADO (igual en todos los mundos):
+     · A = { ... }        → AJUSTES rápidos (tamaños, colores, cantidades)
+     · registrarMundo({   → la "ficha" del mundo:
+         cielo, niebla, exposicion, reflejos  → el ambiente (ver c.js §2)
+         inicio   → dónde apareces y hacia dónde miras (grados)
+         limites  → hasta dónde puedes caminar
+         construir(H) → aquí se arma todo, paso a paso
+       })
    ========================================================================== */
 (function () {
-  'use strict';
-  const { THREE, rng, lienzo, halo, fusionar, colorearVertices, mover, cablesColgantes, luzPuntual, mat, cajaUV, texturaConcreto } = window.TX;
+  const THREE = AFRAME.THREE;
 
-  // Un cuerpo pálido en una pose aleatoria (cabeza, torso, 2 brazos, 2 piernas) → UNA geometría
-  function geoFigura(R) {
-    const partes = [];
-    const cap = (r, l) => new THREE.CapsuleGeometry(r, l, 2, 6);
-    partes.push(cap(0.14, 0.42));
-    partes.push(mover(new THREE.SphereGeometry(0.11, 10, 8), [0, 0.45, 0]));
-    // una extremidad = dos cápsulas encadenadas (como un hueso y un antebrazo)
-    function miembro(px, py, a1, b1, a2, largo, r) {
-      const m1 = new THREE.Matrix4().compose(new THREE.Vector3(px, py, 0),
-        new THREE.Quaternion().setFromEuler(new THREE.Euler(b1, 0, a1)), new THREE.Vector3(1, 1, 1));
-      const g1 = cap(r, largo); g1.translate(0, -(largo / 2 + r), 0); g1.applyMatrix4(m1);
-      const mCodo = m1.clone().multiply(new THREE.Matrix4().makeTranslation(0, -(largo + 2 * r), 0)).multiply(new THREE.Matrix4().makeRotationZ(a2));
-      const g2 = cap(r * 0.85, largo); g2.translate(0, -(largo / 2 + r), 0); g2.applyMatrix4(mCodo);
-      partes.push(g1, g2);
-    }
-    [-1, 1].forEach(s => {
-      miembro(s * 0.18, 0.26, s * (0.3 + R() * 1.7), (R() - 0.5) * 0.8, s * (R() - 0.3) * 1.2, 0.26, 0.045);   // brazos
-      miembro(s * 0.08, -0.26, s * (0.1 + R() * 0.7), (R() - 0.5) * 0.7, -s * R() * 0.9, 0.3, 0.06);          // piernas
-    });
-    return fusionar(partes);
-  }
+  // ── AJUSTES: cambia estos valores y recarga ──────────────────────────────
+  const A = {
+    largo: 30, ancho: 14, altoTecho: 4.2,      // tamaño de la sala (metros)
+    filas: 8,                                  // cápsulas por columna
+    separacion: 3.1,                           // distancia entre cápsulas
+    columnas: [-5.2, -3.0, 3.0, 5.2],          // posición X de cada columna
+    colorLiquido: '#ff2f7a',
+    colorCuerpo: '#ffc9cf',
+    colorVidrio: '#9ff2e4',
+    colorLuz: '#ff2a74',
+    intensidadLuz: 4,                          // fuerza de las 3 luces rosas del pasillo
+    cables: 46,                                // cables colgando (se ajusta con la calidad)
+    burbujas: 260,
+  };
 
-  AFRAME.registerComponent('incubadora', {
-    schema: {
-      desde:    { default: 22 },      // z de la entrada (local)
-      hasta:    { default: -34 },     // z del fondo
-      ancho:    { default: 8 },
-      alto:     { default: 3.5 },     // techo bajo = agobio
-      parejas:  { default: 9 },       // cápsulas por lado (total = parejas × 2)
-      ocupadas: { default: 0.72 },    // fracción de cápsulas con cuerpo dentro
-      colores:  { default: '#7dffd8,#ff4fa6,#6fc8ff,#ffc36b' },   // colores de los líquidos
-      semilla:  { default: 4 }
-    },
+  TECNO.registrarMundo({
+    id: 1,
+    cielo: { arriba: '#000000', horizonte: '#03100d', abajo: '#000000' },
+    niebla: { color: '#020807', densidad: 0.075 },
+    exposicion: 1.25,
+    reflejos: 0.35,
+    inicio: { pos: [0, 0, 12.5], mirar: 0 },
+    limites: { minX: -6.5, maxX: 6.5, minZ: -15.5, maxZ: 13.6 },
 
-    init: function () {
-      const d = this.data, R = rng(d.semilla), raiz = new THREE.Group();
-      const largo = d.desde - d.hasta, zc = (d.desde + d.hasta) / 2, hx = d.ancho / 2;
-      const cols = d.colores.split(',').map(s => s.trim());
+    construir(H) {
+      const W = A.ancho, L = A.largo, T = A.altoTecho;
+      const zc = -1;                           // centro de la sala en Z (va de −16 a +14)
 
-      /* ─── 1 · LA SALA: suelo, paredes, techo ─────────────────────────────── */
-      const matMuro = mat.estandar('#ffffff', { map: texturaConcreto({ base: '#1d2b2d', mancha: '#0f3a2c', intensidad: 0.9, semilla: 2 }), roughness: 0.95 });
-      const caja = (w, h, dp, x, y, z) => { const m = new THREE.Mesh(cajaUV(w, h, dp, 4), matMuro); m.position.set(x, y, z); raiz.add(m); };
-      caja(0.4, d.alto + 0.4, largo, -hx - 0.2, d.alto / 2, zc);          // pared izquierda
-      caja(0.4, d.alto + 0.4, largo, hx + 0.2, d.alto / 2, zc);           // pared derecha
-      caja(d.ancho + 1, 0.4, largo, 0, d.alto + 0.2, zc);                 // techo
-      caja(d.ancho + 1, d.alto + 0.4, 0.4, 0, d.alto / 2, d.hasta - 0.2); // fondo
-      caja(d.ancho + 1, d.alto + 0.4, 0.4, 0, d.alto / 2, d.desde + 0.2); // atrás de ti
+      // 1 · LUCES ─────────────────────────────────────────────────────────
+      H.luzAmbiente('#123b35', 0.8);
+      H.luzHemisferio('#2a7a6c', '#12040a', 0.9);
+      const luces = [8, 0, -8].map(z => H.luzPunto(A.colorLuz, A.intensidadLuz, 9, [0, 3.4, z]));
+      H.luzPunto('#bff8ee', 8, 10, [0, 2.6, -13]);   // luz fría junto a la salida
 
-      // suelo de rejilla metálica (se dibuja con un canvas y se repite)
-      const texPiso = lienzo(128, 128, (g, w, h) => {
-        g.fillStyle = '#070d0f'; g.fillRect(0, 0, w, h);
-        g.strokeStyle = '#1a3034'; g.lineWidth = 3;
-        for (let i = 0; i <= 4; i++) { g.beginPath(); g.moveTo(i * 32, 0); g.lineTo(i * 32, h); g.stroke(); g.beginPath(); g.moveTo(0, i * 32); g.lineTo(w, i * 32); g.stroke(); }
-        g.fillStyle = '#0d1a1d'; for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) g.fillRect(i * 32 + 8, j * 32 + 8, 16, 16);
+      // 2 · LA SALA: piso, techo y paredes ────────────────────────────────
+      H.plano({ ancho: W, alto: L, rot: [-90, 0, 0], pos: [0, 0, zc], textura: 'panel', repetir: [W / 3.5, L / 3.5], color: '#7d8b87', rugosidad: 0.5, metal: 0.4 });
+      H.plano({ ancho: W, alto: L, rot: [90, 0, 0], pos: [0, T, zc], textura: 'panel', repetir: [W / 4, L / 4], color: '#2a302f' });
+      const pared = H.mat({ textura: 'panel', repetir: [L / 4, T / 4], color: '#3c4644', rugosidad: 0.7, metal: 0.3 });
+      H.plano({ ancho: L, alto: T, pos: [-W / 2, T / 2, zc], rot: [0, 90, 0], mat: pared });
+      H.plano({ ancho: L, alto: T, pos: [W / 2, T / 2, zc], rot: [0, -90, 0], mat: pared });
+      const testera = H.mat({ textura: 'panel', repetir: [W / 4, T / 4], color: '#3c4644', rugosidad: 0.7, metal: 0.3 });
+      H.plano({ ancho: W, alto: T, pos: [0, T / 2, zc - L / 2], mat: testera });
+      H.plano({ ancho: W, alto: T, pos: [0, T / 2, zc + L / 2], rot: [0, 180, 0], mat: testera });
+
+      // vigas, tuberías y conductos → todo FUSIONADO en una sola malla
+      const techo = [];
+      for (let z = 13; z > -16; z -= 3) techo.push(H.geo.caja({ ancho: W, alto: 0.28, fondo: 0.3, pos: [0, T - 0.14, z] }));
+      for (const x of [-4.1, -1.3, 1.3, 4.1]) techo.push(H.geo.cilindro({ radio: 0.13, alto: L, lados: 10, pos: [x, T - 0.45, zc], rot: [90, 0, 0] }));
+      for (let z = 12; z > -15; z -= 4.5) for (const x of [-W / 2 + 0.25, W / 2 - 0.25]) techo.push(H.geo.cilindro({ radio: 0.09, alto: T, lados: 8, pos: [x, T / 2, z] }));
+      H.malla(H.fusionar(techo), H.mat({ color: '#1b2221', metal: 0.7, rugosidad: 0.45 }));
+
+      // 3 · CÁPSULAS (INSTANCIAS: todas las copias en una sola llamada) ───
+      const lugares = [];
+      for (const x of A.columnas) for (let i = 0; i < A.filas; i++) lugares.push([x, 10.5 - i * A.separacion]);
+      const enCadaCapsula = (extra = {}) => lugares.map(([x, z]) => ({ pos: [x, 0, z], ...extra }));
+
+      // metal: base + tapa + tubo hacia el techo (fusionados en UNA forma)
+      const metal = H.fusionar([
+        H.geo.cilindro({ radio: 0.82, alto: 0.4, lados: 20, pos: [0, 0.2, 0] }),
+        H.geo.cilindro({ radioArriba: 0.45, radioAbajo: 0.78, alto: 0.45, lados: 20, pos: [0, 3.05, 0] }),
+        H.geo.cilindro({ radio: 0.09, alto: T - 3.2, lados: 6, pos: [0, (3.2 + T) / 2, 0] }),
+      ]);
+      H.instancias(metal, H.mat({ color: '#20292a', metal: 0.8, rugosidad: 0.35 }), enCadaCapsula());
+      // aros de luz rosa
+      const aros = H.fusionar([
+        H.geo.toro({ radio: 0.8, grosor: 0.025, rot: [90, 0, 0], pos: [0, 0.42, 0] }),
+        H.geo.toro({ radio: 0.78, grosor: 0.025, rot: [90, 0, 0], pos: [0, 2.82, 0] }),
+      ]);
+      H.instancias(aros, H.mat({ basico: true, color: A.colorLuz }), enCadaCapsula());
+      // líquido y vidrio
+      const liquido = H.instancias(
+        H.geo.cilindro({ radio: 0.66, alto: 2.4, lados: 20, pos: [0, 1.6, 0] }),
+        H.mat({ color: A.colorLiquido, emisivo: A.colorLiquido, brillo: 0.8, transparente: true, opacidad: 0.5, rugosidad: 0.2 }),
+        enCadaCapsula());
+      H.instancias(
+        H.geo.cilindro({ radio: 0.72, alto: 2.45, lados: 24, abierto: true, pos: [0, 1.62, 0] }),
+        H.mat({ color: A.colorVidrio, transparente: true, opacidad: 0.16, rugosidad: 0.05, metal: 0.1, reflejo: 2, doble: true }),
+        enCadaCapsula());
+
+      // cuerpos en posición fetal, cada uno girado distinto
+      const cuerpos = lugares.map(([x, z]) => ({ x, z, rot: [H.azar(-25, 25), H.azar(0, 360), H.azar(-20, 20)], fase: H.azar(0, 6.28) }));
+      const mCuerpos = H.instancias(
+        H.cuerpo('feto'),
+        H.mat({ color: A.colorCuerpo, emisivo: '#ff5c8a', brillo: 0.3, rugosidad: 0.55 }),
+        cuerpos.map(c => ({ pos: [c.x, 1.2, c.z], rot: c.rot, esc: 0.8 })),
+        { mover: true });
+
+      // cada cápsula es sólida (no la atraviesas) y tiene un halo arriba
+      lugares.forEach(([x, z]) => {
+        H.solido(x, z, 1.7, 1.7);
+        H.brillo({ pos: [x, 3.25, z], color: A.colorLuz, tamano: 1.6, opacidad: 0.35 });
       });
-      texPiso.wrapS = texPiso.wrapT = THREE.RepeatWrapping; texPiso.repeat.set(d.ancho / 2, largo / 2);
-      const piso = new THREE.Mesh(new THREE.PlaneGeometry(d.ancho, largo), mat.estandar('#ffffff', { map: texPiso, roughness: 0.4, metalness: 0.5 }));
-      piso.rotation.x = -Math.PI / 2; piso.position.z = zc; raiz.add(piso);
 
-      /* ─── 2 · AGUJEROS REDONDOS EN LAS PAREDES (como un conducto abandonado) ─── */
-      const negros = [], bordes = [], brillosG = [];
-      [-1, 1].forEach(lado => {
-        for (let i = 0; i < 7; i++) {
-          const z = d.desde - 4 - i * (largo - 8) / 6, y = 2.15, x = lado * (hx - 0.01);
-          const rot = [0, lado < 0 ? Math.PI / 2 : -Math.PI / 2, 0];            // que miren hacia dentro
-          negros.push(mover(new THREE.CircleGeometry(0.5, 20), [x, y, z], rot));
-          bordes.push(mover(new THREE.TorusGeometry(0.52, 0.07, 6, 20), [x, y, z], rot));
-          if (R() < 0.35) brillosG.push(colorearVertices(mover(new THREE.CircleGeometry(0.44, 16), [x - lado * 0.02, y, z], rot), cols[Math.floor(R() * cols.length)]));
+      // 4 · CABLES ────────────────────────────────────────────────────────
+      const cables = [];
+      for (let i = 0; i < H.cantidad(A.cables); i++) {
+        const x = H.azar(-W / 2 + 0.5, W / 2 - 0.5), z = H.azar(-15, 13);
+        const enPasillo = Math.abs(x) < 2;
+        cables.push(H.geo.cable({
+          desde: [x, T - 0.3, z], hasta: [x + H.azar(-2.5, 2.5), T - 0.3, z + H.azar(-3, 3)],
+          caida: enPasillo ? H.azar(0.3, 0.9) : H.azar(0.6, 2.4), radio: H.azar(0.015, 0.04),
+        }));
+      }
+      // cables que salen de cada cápsula y se arrastran por el piso
+      lugares.forEach(([x, z]) => {
+        for (const lado of [-1, 1]) {
+          cables.push(H.geo.tubo({
+            puntos: [[x + lado * 0.5, 2.9, z], [x + lado * 0.95, 2.0, z + H.azar(-0.3, 0.3)], [x + lado * 1.05, 0.3, z + H.azar(-0.5, 0.5)], [x + lado * 1.5, 0.03, z + H.azar(-1, 1)]],
+            radio: 0.03,
+          }));
         }
       });
-      raiz.add(new THREE.Mesh(fusionar(negros), mat.basico('#000000')));
-      raiz.add(new THREE.Mesh(fusionar(bordes), matMuro));
-      if (brillosG.length) raiz.add(new THREE.Mesh(fusionar(brillosG), mat.basico('#ffffff', { vertexColors: true, transparent: true, opacity: 0.55 })));
+      H.malla(H.fusionar(cables), H.mat({ color: '#060808', metal: 0.6, rugosidad: 0.35 }));
 
-      /* ─── 3 · TUBERÍAS EN EL TECHO + CABLES COLGANDO ────────────────────────── */
-      const tubos = [];
-      [-3.3, -2.6, -1.4, 1.3, 2.4, 3.3].forEach((x, i) => {
-        const r = 0.07 + R() * 0.1, y = d.alto - 0.25 - R() * 0.35;
-        tubos.push(colorearVertices(mover(new THREE.CylinderGeometry(r, r, largo, 8, 1), [x, y, zc], [Math.PI / 2, 0, 0]), i % 3 ? '#3b4a4d' : '#4a3a30'));
-      });
-      raiz.add(new THREE.Mesh(fusionar(tubos), mat.estandar('#ffffff', { vertexColors: true, roughness: 0.6, metalness: 0.5 })));
-
-      /* ─── 4 · LAS CÁPSULAS ─────────────────────────────────────────────────────
-         Para cada cápsula creamos sus piezas como GEOMETRÍAS sueltas y las vamos
-         metiendo en listas. Al final cada lista se fusiona en UNA sola malla.       */
-      const bases = [], neones = [], vidrios = [], liquidos = [], ledsV = [], ledsR = [], tramos = [];
-      this.cuerpos = [];
-      const matsCuerpo = {};
-      const n = d.parejas, paso = (largo - 12) / (n - 1), z0 = d.desde - 6;
-      [-1, 1].forEach(lado => {
-        for (let i = 0; i < n; i++) {
-          const x = lado * 2.65 + (R() - 0.5) * 0.1, z = z0 - i * paso + (R() - 0.5) * 0.2;
-          const ocupada = R() < d.ocupadas, col = cols[Math.floor(R() * cols.length)];
-
-          bases.push(mover(new THREE.CylinderGeometry(0.8, 0.85, 0.3, 20), [x, 0.15, z]));    // pedestal
-          bases.push(mover(new THREE.CylinderGeometry(0.8, 0.7, 0.35, 20), [x, 2.42, z]));    // tapa superior
-          neones.push(colorearVertices(mover(new THREE.CylinderGeometry(0.72, 0.72, 0.05, 24), [x, 0.32, z]), ocupada ? col : '#1a2a2a'));
-          vidrios.push(mover(new THREE.CylinderGeometry(0.64, 0.64, 1.95, 24, 1, true), [x, 1.3, z]));
-          if (ocupada) {
-            liquidos.push(colorearVertices(mover(new THREE.CylinderGeometry(0.6, 0.6, 1.85, 18), [x, 1.25, z]), col));
-            // el cuerpo flotando es una malla propia (para poder animarla)
-            if (!matsCuerpo[col]) matsCuerpo[col] = mat.basico(new THREE.Color(col).lerp(new THREE.Color('#ffffff'), 0.45), { transparent: true, opacity: 0.55, depthWrite: false });
-            const cuerpo = new THREE.Mesh(geoFigura(R), matsCuerpo[col]);
-            cuerpo.position.set(x, 1.3, z); cuerpo.scale.setScalar(0.95); cuerpo.rotation.y = R() * 6.28;
-            raiz.add(cuerpo);
-            this.cuerpos.push({ m: cuerpo, y0: 1.3, fase: R() * 6.28, giro: (R() - 0.5) * 0.0004 });
-          }
-          const resplandor = halo(col, 3.4, ocupada ? 0.38 : 0.08);
-          resplandor.position.set(x, 1.3, z);
-          raiz.add(resplandor);
-
-          // 3 cables que suben de la tapa al techo
-          for (let k = 0; k < 3; k++) {
-            const a = new THREE.Vector3(x + (R() - 0.5) * 0.5, 2.6, z + (R() - 0.5) * 0.5);
-            tramos.push({ a: a, b: new THREE.Vector3(a.x + (R() - 0.5) * 1.2, d.alto, a.z + (R() - 0.5) * 1.2), caida: 0.2 + R() * 0.3 });
-          }
-          // 3 leds en el pedestal (1 rojo, 2 verdes) mirando al pasillo
-          for (let k = 0; k < 3; k++) (k === 0 ? ledsR : ledsV).push(mover(new THREE.BoxGeometry(0.05, 0.05, 0.02), [x - lado * 0.86, 0.17, z + (k - 1) * 0.16], [0, Math.PI / 2, 0]));
-        }
-      });
-
-      const matMetal = mat.estandar('#2a3235', { metalness: 0.7, roughness: 0.45 });
-      raiz.add(new THREE.Mesh(fusionar(bases), matMetal));
-      raiz.add(new THREE.Mesh(fusionar(neones), mat.basico('#ffffff', { vertexColors: true })));
-      raiz.add(new THREE.Mesh(fusionar(vidrios), mat.estandar('#bfeee6', { transparent: true, opacity: 0.16, roughness: 0.05, side: THREE.DoubleSide, depthWrite: false })));
-      raiz.add(new THREE.Mesh(fusionar(liquidos), mat.basico('#ffffff', { vertexColors: true, transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending, depthWrite: false })));
-      raiz.add(new THREE.Mesh(cablesColgantes(tramos, 0.03), mat.estandar('#14191a', { roughness: 0.5 })));
-      this.matLedR = mat.basico('#ff2a2a'); this.matLedV = mat.basico('#38ff8a');
-      raiz.add(new THREE.Mesh(fusionar(ledsR), this.matLedR));
-      raiz.add(new THREE.Mesh(fusionar(ledsV), this.matLedV));
-
-      /* ─── 5 · LUCES ──────────────────────────────────────────────────────────── */
-      // tubos fluorescentes del techo: algunos están muertos, otros parpadean
-      this.tubosLuz = [];
-      for (let i = 0; i < 6; i++) {
-        const m = mat.basico('#d8fff0');
-        const t = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.05, 2.2), m);
-        t.position.set(0, d.alto - 0.03, d.desde - 5 - i * (largo - 10) / 5);
-        raiz.add(t);
-        this.tubosLuz.push({ m: m, viva: R() < 0.6, fase: R() * 100 });
+      // unos pocos cables que BRILLAN sobre el pasillo
+      const vivos = [];
+      for (let i = 0; i < H.cantidad(12); i++) {
+        const x = H.azar(-1.4, 1.4), z = H.azar(-14, 12);
+        vivos.push(H.geo.cable({ desde: [x, T - 0.35, z], hasta: [x + H.azar(-1, 1), T - 0.35, z + H.azar(-2.5, 2.5)], caida: H.azar(0.4, 1.2), radio: 0.008 }));
       }
-      // luces de verdad (pocas: cada una cuesta rendimiento)
-      this.luces = [];
-      [[d.desde - 8, '#7dffd8'], [zc + 4, '#ff4fa6'], [d.hasta + 14, '#7dffd8'], [d.hasta + 5, '#6fc8ff']].forEach(([z, c], i) => {
-        const l = luzPuntual(c, 18, 16); l.position.set(0, d.alto - 0.6, z);
-        raiz.add(l); this.luces.push({ l: l, fase: i * 1.7 });
-      });
+      H.malla(H.fusionar(vivos), H.mat({ aditivo: true, color: '#aefcf0', opacidad: 0.8 }));
 
-      this.rojoOn = new THREE.Color('#ff2a2a');
-      this.el.setObject3D('mesh', raiz);
+      // 5 · TIRAS DE LUZ en el piso que guían hacia la salida ────────────
+      for (const x of [-1.8, 1.8]) H.caja({ ancho: 0.05, alto: 0.02, fondo: L - 1, pos: [x, 0.01, zc], basico: true, color: '#ff1f5e' });
+
+      // 6 · PARTÍCULAS: burbujas en las cápsulas + polvo en el aire ──────
+      H.particulas({ cantidad: A.burbujas, centros: lugares.map(([x, z]) => [x, 1.6, z]), area: [0.9, 2.3, 0.9], color: '#ffd1e3', tamano: 0.05, velocidad: [0, 0.35, 0], vaiven: 0.05, opacidad: 0.8 });
+      H.particulas({ cantidad: 160, centro: [0, 2, zc], area: [W, T, L], color: '#7fd9c8', tamano: 0.03, velocidad: [0, 0.02, 0], opacidad: 0.5 });
+
+      // 7 · LA SALIDA → MUNDO 2 ───────────────────────────────────────────
+      H.caja({ ancho: 3.4, alto: 3.8, fondo: 0.3, pos: [0, 1.9, zc - L / 2 + 0.1], color: '#050707' });   // hueco oscuro
+      H.portal({ destino: 2, pos: [0, 0, zc - L / 2 + 0.3], etiqueta: 'Afuera', color: '#e9fffb', velo: '#ffffff', ancho: 2.4, alto: 3.3 });
+
+      // 8 · ANIMACIÓN (se ejecuta en cada cuadro) ─────────────────────────
+      let falla = 0;
+      H.animar((t, dt) => {
+        liquido.material.emissiveIntensity = 0.65 + Math.sin(t * 1.1) * 0.25;     // el líquido "respira"
+        falla -= dt;                                                               // una luz que falla
+        if (falla < 0 && Math.random() < 0.01) falla = H.azar(0.05, 0.4);
+        luces[1].intensity = falla > 0 ? (Math.random() < 0.5 ? 0.3 : 2) : A.intensidadLuz;
+        cuerpos.forEach((c, i) => H.moverInstancia(mCuerpos, i, {                 // los cuerpos flotan y giran
+          pos: [c.x, 1.2 + Math.sin(t * 0.6 + c.fase) * 0.07, c.z],
+          rot: [c.rot[0], c.rot[1] + t * 3, c.rot[2]], esc: 0.8,
+        }));
+      });
     },
-
-    tick: function (t) {
-      // luces: respiración lenta + caídas bruscas ocasionales (fallo eléctrico)
-      this.luces.forEach(o => {
-        const base = o.l.userData.base * window.TX.CONFIG.potenciaLuces;
-        o.l.intensity = base * (0.82 + 0.18 * Math.sin(t * 0.002 + o.fase)) * (Math.random() < 0.012 ? 0.25 : 1);
-      });
-      this.tubosLuz.forEach(o => {
-        const v = o.viva ? (Math.random() < 0.04 ? 0.15 : 0.9) : 0.06;
-        o.m.color.set('#d8fff0').multiplyScalar(v);
-      });
-      this.matLedR.color.copy(this.rojoOn).multiplyScalar(Math.floor(t / 650) % 2 ? 1 : 0.12);
-      this.matLedV.color.set('#38ff8a').multiplyScalar(0.6 + 0.4 * Math.sin(t * 0.004));
-      // cuerpos flotando dentro del líquido
-      for (let i = 0; i < this.cuerpos.length; i++) {
-        const c = this.cuerpos[i];
-        c.m.position.y = c.y0 + 0.06 * Math.sin(t * 0.0008 + c.fase);
-        c.m.rotation.y += c.giro * 16;
-      }
-    }
   });
 })();

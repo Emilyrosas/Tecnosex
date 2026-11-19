@@ -1,0 +1,11 @@
+CARPETA DE MÚSICA
+=================
+Pon aquí tus archivos de audio (.mp3, .ogg o .wav).
+
+Luego abre config.js, busca la sección "4 · MÚSICA" y escribe el nombre
+del archivo en el mundo que quieras. Ejemplo:
+
+    3: { archivo: 'audio/fabrica.mp3', volumen: 0.8, sinte: { ... } },
+
+Si dejas  archivo: ''  ese mundo usa el sintetizador (no necesita archivos).
+Importante: abre el proyecto con un servidor local (ver README.md).

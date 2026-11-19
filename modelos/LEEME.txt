@@ -1,0 +1,13 @@
+CARPETA DE MODELOS 3D
+=====================
+Pon aquí tus modelos .glb (o .gltf con sus texturas).
+
+Luego abre config.js, busca la sección "5 · MODELOS 3D" y agrégalos al
+mundo que quieras. Ejemplo:
+
+    2: [
+      { url: 'modelos/estatua.glb', pos: [-6, 0, 8], rot: [0, 45, 0], esc: 1.5 },
+    ],
+
+pos = [x, y, z] en metros · rot = grados · esc = tamaño (1 = original)
+Importante: abre el proyecto con un servidor local (ver README.md).
