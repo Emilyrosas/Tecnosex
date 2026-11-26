@@ -166,7 +166,7 @@ window.CONFIG = {
       4: { nombre: 'La Torre', subtitulo: '...',
            narracion: ['Levanta la mirada.', 'Fue hecha para que recuerdes tu tamaño.', 'La puerta está abierta. Siempre lo estuvo.', '¿Aquí estará mi libertad?'] },
       5: { nombre: 'El Fin', subtitulo: 'Cuerpos que ya no desean',
-           narracion: ['Cientos de cuerpos. Ninguno respira.', 'Brillan como si todavía esperaran a alguien.', 'En el centro, el ojo te reconoce.', '¿Es mi elección o la de alguien más?'] },
+           narracion: ['Cientos de cuerpos. Ninguno respira.', '¿Fueron libres?', 'En el centro, el ojo te reconoce.', '¿Es mi elección o la de alguien más?'] },
       6: { nombre: 'La Orilla', subtitulo: 'Un lugar para mirar(me)',
            narracion: ['Elegiste sentir.', 'El mar repite lo mismo una y otra vez, como un pensamiento.', 'Quédate el tiempo que quieras. Así espero que te entiendas'] },
       7: { nombre: 'Las Ruinas', subtitulo: 'Lo que queda cuando el deseo se va',
