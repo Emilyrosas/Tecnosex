@@ -16,8 +16,12 @@ ni modelos .glb** (el navegador los bloquea cuando la página se abre como archi
 **Opción recomendada (servidor local):** abre una terminal en la carpeta del proyecto y ejecuta:
 
 ```bash
-python -m http.server 8765
+python servidor.py
 ```
+
+`servidor.py` es como `python -m http.server`, pero le pide al navegador que no guarde
+copias viejas: así cada F5 muestra tus últimos cambios. (Si usas `python -m http.server`
+y no ves un cambio, recarga con **Ctrl+F5**.)
 
 Luego abre <http://localhost:8765> en el navegador.
 
@@ -32,8 +36,10 @@ Luego abre <http://localhost:8765> en el navegador.
 | Correr | Shift |
 | Ajustes (calidad, volumen, lista de mundos) | Esc o el botón ⚙ |
 | Avanzar diálogo / elegir | Espacio, clic / teclas 1 y 2 |
+| Pantalla completa (con textos) | P o el botón ⛶ |
 | Silencio · ocultar interfaz · cambiar calidad · ver FPS | M · H · Q · F |
 | Saltar a un mundo (mientras editas) | 1 a 8 |
+| Inspector de A-Frame (editar piezas) | Ctrl + Alt + I |
 
 ---
 
@@ -69,7 +75,7 @@ Luego abre <http://localhost:8765> en el navegador.
 **¿Por qué 8 y no 7?** El camino común (1, 2) + el camino 1 (3, 4, 5) + el camino 2 (6, 7)
 suman 7. El octavo es el **punto donde los dos caminos se juntan** y desde donde la historia
 vuelve a empezar. Si prefieres que cada camino tenga su propio final, cambia el `destino` del
-portal del mundo 7 o del diálogo `ultimo` (ver sección 4).
+portal del mundo 7 o del diálogo `ultimo` (ver sección 5).
 
 ---
 
@@ -79,6 +85,8 @@ portal del mundo 7 o del diálogo `ultimo` (ver sección 4).
 index.html          → la página: carga todo, la interfaz (HUD) y la escena 3D
 style.css           → el aspecto de la interfaz (colores en :root)
 config.js           → TUS AJUSTES: música, modelos, calidad, textos, diálogos  ← lo que más vas a tocar
+ajustes.js          → lo que moviste a mano con el inspector (Ctrl + Alt + I)
+servidor.py         → servidor local que no guarda copias viejas
 c.js                → el núcleo: herramientas de construcción, jugador, portales, orbes, sonido
 mundos/
   m1-incubadora.js  → un archivo por mundo                                       ← lo segundo que más vas a tocar
@@ -95,7 +103,33 @@ modelos/            → tus modelos 3D (.glb)
 
 ---
 
-## 4. Recetas: dónde cambiar cada cosa
+## 4. Editar con el inspector (cada objeto es una pieza)
+
+Cada objeto de los 8 mundos es su propia entidad de A-Frame, con nombre, dentro de
+la **sección** del mundo a la que pertenece (las mismas secciones numeradas del código).
+
+1. Abre el inspector con **Ctrl + Alt + I** (o Esc → *Abrir inspector*).
+2. En el árbol: `mundo-3` → `m3-11-la-linea-de-produccion-1` → `…-cuerpos-1` → `…-cuerpo-4`.
+   También puedes hacer clic directo sobre un objeto en la vista 3D.
+3. Muévelo, gíralo o escálalo (teclas **W / E / R** cambian de herramienta), o bórralo (**Supr**).
+4. Cierra el inspector (**Ctrl + Alt + I**), abre Ajustes (**Esc**) y pulsa
+   **Copiar cambios de este mundo**.
+5. Pega el texto al final de [ajustes.js](ajustes.js) y guarda. Al recargar, tus cambios se
+   aplican solos encima de lo que arma el código (también los choques con paredes).
+
+Qué hay que saber:
+- Los cambios del inspector **no se guardan solos**: si no los copias a `ajustes.js`, se pierden al recargar.
+- Lo que se mueve solo (los cuerpos de la cinta, los anillos que giran) no cuenta como cambio.
+- Hay unas pocas **masas** que siguen siendo una sola pieza porque son miles de cosas iguales:
+  el pasto, las partículas, la ciudad de bloques y las ventanas y vértebras de la torre, los
+  papeles, fotos, hojas y focos. Se cambian desde el código (`A = {...}` de cada mundo).
+- El id de una pieza depende del orden en que el código la crea. Si luego agregas o quitas
+  piezas **en la misma sección del código**, revisa sus ajustes (la consola avisa si alguno
+  ya no encuentra su pieza).
+
+---
+
+## 5. Recetas: dónde cambiar cada cosa
 
 ### Cambiar la música
 `config.js` → sección **4 · MÚSICA**. Pon el archivo en `audio/` y escribe su ruta:
@@ -122,6 +156,12 @@ O desde el código de un mundo, dentro de `construir(H)`:
 ```js
 H.modelo({ url: 'modelos/silla.glb', pos: [0, 0, -3], rot: [0, 180, 0], esc: 1 });
 ```
+
+### Cambiar o quitar la cinemática del inicio
+`config.js` → sección **7 · CINEMÁTICA**. El video está en `video/cinematica-inicio.mp4`.
+Para usar otro, ponlo en `video/` y cambia `archivo`. Con `archivo: ''` no hay cinemática.
+`saltable: false` obliga a verla completa; `alReiniciar: false` hace que solo se vea la
+primera vez (y no al volver al Mundo 1 desde el final).
 
 ### Cambiar textos, narración y diálogos
 `config.js` → sección **6 · TEXTOS**. Cada mundo tiene `nombre`, `subtitulo` y `narracion`.
@@ -157,9 +197,9 @@ cuántas "llamadas de dibujo" hace cada mundo.
 
 ---
 
-## 5. Explicación completa del código
+## 6. Explicación completa del código
 
-### 5.1 `index.html`
+### 6.1 `index.html`
 
 1. Carga, en orden: A-Frame → `config.js` → `c.js` → los 8 mundos. El orden importa porque
    cada archivo usa lo que definió el anterior.
@@ -173,12 +213,12 @@ cuántas "llamadas de dibujo" hace cada mundo.
 La pantalla de inicio existe también por una razón técnica: los navegadores no dejan
 sonar audio hasta que el usuario hace clic. El botón "Entrar" enciende el sonido.
 
-### 5.2 `config.js`
+### 6.2 `config.js`
 
 Un solo objeto, `window.CONFIG`, con todos los ajustes. No tiene lógica: solo datos.
 `c.js` y los mundos lo leen. Así puedes cambiar música, textos o calidad sin tocar código.
 
-### 5.3 `c.js` — el núcleo
+### 6.3 `c.js` — el núcleo
 
 Está dividido en 9 secciones (busca `§1`, `§2`… con Ctrl+F):
 
@@ -198,17 +238,26 @@ H.caja({ ancho: 2, alto: 3, fondo: 1, pos: [0, 1.5, -4], color: '#888', solido: 
   `aditivo`…) a materiales de Three.js.
 - *Geometrías* (`H.geo.caja`, `H.geo.cable`, `H.geo.tubo`…): formas ya colocadas, listas
   para **fusionar**.
-- **`H.fusionar([...])`**: junta muchas formas en UNA malla. La GPU dibuja una sola vez
-  en lugar de cientos. Se usa para muros, vigas, cables, lápidas…
-- **`H.instancias(forma, material, lista)`**: cientos de copias de la misma forma en una
-  sola llamada (cápsulas, cuerpos, pasto, servidores). Es la razón por la que el osario
-  puede tener cientos de cuerpos.
+- **Piezas**: cada herramienta crea su propia `<a-entity>` con un id legible, dentro de la
+  sección actual (`H.seccion('3 · Cápsulas')`). Opción `nombre: 'mesa'` para nombrarla.
+  `H.pieza(malla)` devuelve la entidad de una malla, para moverla entera desde una animación.
+- **`H.fusionar([...])`**: arma un *conjunto* (por ejemplo, todas las vigas de un techo).
+  Al ponerlo con `H.malla`, cada parte vuelve a ser su propia pieza. Con
+  `H.fusionar([...], { unir: true })` queda como UNA pieza (un cuerpo, una silla, un muro).
+- **`H.instancias(forma, material, lista)`**: muchas copias de la misma forma, cada una
+  como pieza propia dentro de un grupo (cápsulas, cuerpos, servidores). Con `masa: true`
+  se dibujan todas juntas en una sola pieza: solo para miles de cosas (pasto, hojas).
 - `H.brillo` (halos que miran a la cámara), `H.particulas` (polvo, burbujas, ceniza),
   `H.texto` (palabras flotantes), luces (`H.luzSol`, `H.luzPunto`…).
 - Piezas compuestas que se repiten entre mundos: `H.cuerpo(pose)` arma un cuerpo con
   cápsulas a partir de ángulos (de pie, feto, caído, sentado); `H.candelabro` (anillos con
   cables colgando); `H.lampara`; `H.muro` (muro con huecos y bordes rotos); `H.pasto`
   (hojas que se mecen con un pequeño truco de shader).
+- Piezas de ambiente compartidas (dan unidad visual entre mundos): `H.crt` (monitor viejo
+  con estática), `H.nieblaBaja` (bancos de niebla a ras del suelo), `H.bandada` (pájaros
+  en círculos), `H.rayos` (rayos de luz falsos en abanico).
+- `H.sonido({ pos, tipo, radio })`: un sonido que vive en un lugar del mundo; suena más
+  fuerte al acercarte y se escucha a la izquierda o derecha según hacia dónde miras.
 - `H.animar(fn)`: registra una función que se ejecuta en cada cuadro mientras el mundo
   está activo. `H.solido(...)`: cajas invisibles con las que chocas.
 
@@ -242,11 +291,17 @@ colinas de la llanura). También mueve un poco la cabeza al caminar.
 **§6 · Diálogos e interfaz.** El cuadro de diálogo escribe letra por letra, avanza con
 clic/Espacio y muestra las opciones al final. También están la narración (subtítulos),
 las pistas, los avisos, el panel de ajustes, el teclado y el joystick táctil.
+Aquí vive también `TECNO.cinematica(alTerminar)`: muestra el video a pantalla completa,
+bloquea al jugador, apaga la música del mundo y, cuando el video termina o lo saltas, hace
+un fundido y llama a `alTerminar` (que muestra el título y te deja caminar). La llama el
+botón "Entrar" si el mundo es el 1, y `TECNO.irA` cuando el ciclo vuelve al 1.
 
 **§7 · Sonido.** Con Web Audio API. Si el mundo tiene archivo, lo reproduce en bucle con
 fundido cruzado. Si no, el **sintetizador** crea: cuatro osciladores (nota, quinta, octava,
 octava grave) → un filtro que "respira" → ruido filtrado (viento, o mar si `oleaje`) →
-campanas al azar con eco → latido opcional.
+campanas al azar con eco → latido opcional. Encima se suman **capas de ambiente** hechas con código
+(`grillos`, `cuervos`, `gaviotas`, `goteo`, `zumbido`, `maquinas`, `crujidos`,
+`chisporroteo`, `estatica`, `viento`), que se eligen en `config.js → musica[N].sinte.capas`.
 
 **§8 · Calidad.** `TECNO.aplicarCalidad` cambia la resolución al instante y, si cambia la
 densidad o las sombras, reconstruye el mundo sin moverte. Cada 2 segundos mide los FPS; en
@@ -257,7 +312,7 @@ el renderizador (tono cinematográfico, sombras suaves, niebla), prepara la inte
 la calidad guardada y carga el primer mundo. En cada cuadro ejecuta las animaciones del
 mundo activo (si una falla, la desactiva y avisa en la consola en vez de congelar todo).
 
-### 5.4 Un archivo de mundo, paso a paso
+### 6.4 Un archivo de mundo, paso a paso
 
 Todos siguen el mismo esquema:
 
@@ -285,7 +340,7 @@ choquen con las de otro.
 
 ---
 
-## 6. Crear un mundo nuevo
+## 7. Crear un mundo nuevo
 
 1. Copia `mundos/m7-ruinas.js` como `mundos/m9-loquesea.js` y cambia `id: 9`.
 2. En `index.html`, agrega `<script src="mundos/m9-loquesea.js"></script>` después de los demás.
@@ -296,7 +351,7 @@ choquen con las de otro.
 
 ---
 
-## 7. Si algo falla
+## 8. Si algo falla
 
 - **Pantalla negra o un mundo vacío:** abre la consola (F12). Los errores de un mundo
   aparecen como `Error construyendo el mundo N`. Casi siempre es una coma o una llave.

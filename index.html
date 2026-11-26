@@ -15,6 +15,7 @@
   ============================================================================
    1. A-Frame         → la librería 3D (trae Three.js adentro)
    2. config.js       → TUS AJUSTES: música, modelos, calidad, textos, diálogos
+      ajustes.js      → lo que moviste a mano con el inspector (Ctrl + Alt + I)
    3. c.js            → el núcleo: herramientas, jugador, portales, sonido…
    4. mundos/*.js     → un archivo por mundo. Para crear un mundo nuevo:
                         copia uno, cambia su  id, y agrega aquí su <script>.
@@ -22,6 +23,7 @@
   -->
   <script src="https://aframe.io/releases/1.7.1/aframe.min.js"></script>
   <script src="config.js"></script>
+  <script src="ajustes.js"></script>   <!-- lo que moviste con el inspector -->
   <script src="c.js"></script>
 
   <!-- CAMINO COMÚN -->
@@ -91,6 +93,8 @@
     </div>
 
     <button id="boton-panel" title="Ajustes (Esc)" aria-label="Ajustes">⚙</button>
+    <!-- pantalla completa de TODA la página (3D + textos). Tecla P -->
+    <button id="boton-pantalla" title="Pantalla completa (P)" aria-label="Pantalla completa">⛶</button>
 
     <!-- joystick que solo aparece en celulares y tablets -->
     <div id="joystick"><div id="joystick-bola"></div></div>
@@ -115,6 +119,15 @@
       <section>
         <label class="fila"><input type="checkbox" id="ver-fps"> Mostrar rendimiento (FPS)</label>
       </section>
+      <section>
+        <h3>Editar</h3>
+        <div class="fila">
+          <button id="abrir-inspector">Abrir inspector</button>
+          <button id="copiar-cambios">Copiar cambios de este mundo</button>
+        </div>
+        <p class="ayuda">Ctrl + Alt + I abre y cierra el inspector. Cada objeto es una pieza: muévela,
+          gírala o bórrala. Después copia los cambios y pégalos en ajustes.js para guardarlos.</p>
+      </section>
       <section id="seccion-mundos">
         <h3>Mundos</h3>
         <div id="lista-mundos"></div>
@@ -122,7 +135,7 @@
       <section>
         <h3>Controles</h3>
         <p class="ayuda">W A S D o flechas: caminar · Shift: correr · arrastrar el mouse: mirar ·
-          Esc: ajustes · M: silencio · H: ocultar interfaz · Q: calidad · F: FPS · 1-8: ir a un mundo</p>
+          Esc: ajustes · P: pantalla completa · M: silencio · H: ocultar interfaz · Q: calidad · F: FPS · 1-8: ir a un mundo</p>
       </section>
       <button id="cerrar-panel" class="principal">Volver</button>
     </div>
@@ -130,6 +143,12 @@
 
   <!-- fundido entre mundos -->
   <div id="velo"></div>
+
+  <!-- cinemática del inicio (el video se elige en config.js → cinematica) -->
+  <div id="cinematica" hidden>
+    <video id="cinematica-video" playsinline preload="auto"></video>
+    <button id="saltar-cinematica">Saltar ›</button>
+  </div>
 
   <!-- pantalla de inicio (el clic en "Entrar" también enciende el sonido:
        los navegadores no dejan sonar nada antes de que el usuario toque algo) -->

@@ -35,12 +35,14 @@
       const R = A.radio, T = A.alto, [ox, oz] = A.orbe;
 
       // 1 · LUCES: todo viene de arriba ──────────────────────────────────
+      H.seccion('1 · Luces');
       H.luzHemisferio('#c9e6ff', '#140d12', 0.5);
       H.luzAmbiente('#2a3340', 0.35);
       H.luzSol('#e6f4ff', 2.2, [0.15, 1, 0.1], { sombra: true, area: 22 });
       H.luzPunto('#dff2ff', 30, 40, [0, 15, 0]);
 
       // 2 · LA SALA ───────────────────────────────────────────────────────
+      H.seccion('2 · La sala');
       H.cilindro({ radio: R + 0.5, alto: 0.2, lados: 64, pos: [0, -0.1, 0], textura: 'panel', repetir: [10, 10], color: '#6a7378', metal: 0.5, rugosidad: 0.55 });
       const pared = H.mat({ textura: 'metal', repetir: [14, 6], color: '#77736a', metal: 0.6, rugosidad: 0.5, atras: true });
       H.cilindro({ radio: R + 0.6, alto: T, lados: 64, abierto: true, pos: [0, T / 2, 0], mat: pared });
@@ -62,9 +64,11 @@
       H.cilindro({ radioArriba: 6, radioAbajo: 10, alto: T, lados: 32, abierto: true, pos: [0, T / 2, 0], aditivo: true, color: '#cfe8ff', opacidad: 0.05, doble: true });
 
       // 3 · EL CANDELABRO: anillos de luz con cables colgando ────────────
+      H.seccion('3 · El candelabro');
       H.candelabro({ pos: [0, 19, 0], radio: 9, anillos: 3, separacion: 2, cables: 45, caida: 7, color: '#e3f7ff', girar: 0.02 });
 
       // 4 · LOS CUERPOS ───────────────────────────────────────────────────
+      H.seccion('4 · Los cuerpos');
       // Un solo material de cromo; el color (plata o rosa) va por instancia.
       const cromo = H.mat({ color: '#ffffff', metal: 0.95, rugosidad: 0.22, textura: 'metal', reflejo: 1.6 });
       const tono = () => H.azar() < A.proporcionRosa ? A.colorRosa : A.colorPlata;
@@ -85,7 +89,7 @@
         for (let k = 0; k < 6; k++) tirados.push({ pos: [x + H.azar(-0.6, 0.6), 0.15 + k * 0.24, z + H.azar(-0.6, 0.6)], rot: [-90 + H.azar(-15, 15), H.azar(0, 360), H.azar(-25, 25)], color: tono() });
         H.solido(x, z, 2.2, 2.2);
       }
-      H.instancias(H.cuerpo('caido'), cromo, tirados);
+      H.instancias(H.cuerpo('caido'), cromo, tirados, { nombre: 'cuerpos tirados', pieza: 'cuerpo' });
 
       // sentados contra la pared, mirando al centro
       const sentados = [];
@@ -94,7 +98,7 @@
         if (libre(x, z)) continue;
         sentados.push({ pos: [x, 0, z], rot: [0, Math.atan2(-x, -z) * 180 / Math.PI, 0], color: tono() });
       }
-      H.instancias(H.cuerpo('sentado'), cromo, sentados);
+      H.instancias(H.cuerpo('sentado'), cromo, sentados, { nombre: 'cuerpos sentados', pieza: 'cuerpo' });
 
       // colgados: giran despacio colgando de un cable
       const colgados = [], hilos = [];
@@ -104,10 +108,11 @@
         hilos.push(H.geo.cilindro({ radio: 0.012, alto: 19 - y - 1.8, lados: 4, pos: [x, (19 + y + 1.8) / 2, z] }));
       }
       const mColgados = H.instancias(H.cuerpo('de pie'), cromo, colgados.map(c => ({ pos: [c.x, c.y, c.z], rot: [0, c.giro, 0], color: c.color })), { mover: true });
-      H.malla(H.fusionar(hilos), H.mat({ color: '#0d0f12' }));
+      H.malla(H.fusionar(hilos, { nombre: 'hilos' }), H.mat({ color: '#0d0f12' }));
       H.animar(t => colgados.forEach((c, i) => H.moverInstancia(mColgados, i, { pos: [c.x, c.y, c.z], rot: [Math.sin(t * 0.4 + i) * 2, c.giro + t * c.vel, 0] })));
 
       // 5 · EL PASILLO y EL ORBE ──────────────────────────────────────────
+      H.seccion('5 · El pasillo y el orbe');
       const guias = [];
       for (let z = R - 2; z > oz + 4; z -= 1.5) for (const x of [-1.8, 1.8]) guias.push({ pos: [x, 0.02, z] });
       H.instancias(H.geo.caja({ ancho: 0.06, alto: 0.03, fondo: 0.7 }), H.mat({ basico: true, color: '#d8f0ff' }), guias);
@@ -117,6 +122,7 @@
       H.orbe({ pos: [ox, 4.2, oz], radio: 1.5, color: '#eef6ff', iris: '#ff1f4f', dialogo: 'ultimo', distancia: 7, anillos: 1, cables: 18, luz: 8, aviso: 'El ojo te reconoce…' });
 
       // 6 · POLVO cayendo en la luz ──────────────────────────────────────
+      H.seccion('6 · Polvo cayendo en la luz');
       H.particulas({ cantidad: 450, centro: [0, 14, 0], area: [16, 28, 16], color: '#d6ebff', tamano: 0.05, velocidad: [0, -0.12, 0], vaiven: 0.08, opacidad: 0.7 });
     },
   });

@@ -30,11 +30,13 @@
 
     construir(H) {
       // 1 · LUCES ─────────────────────────────────────────────────────────
+      H.seccion('1 · Luces');
       H.luzHemisferio('#ff8ab8', '#3a0016', 1.0);
       H.luzAmbiente('#ff3a7a', 0.35);
       H.luzPunto('#ffffff', 14, 22, [0, 1.6, 0]);
 
       // 2 · EL PISO: líquido brillante con ondas de luz que se expanden ──
+      H.seccion('2 · El piso');
       H.circulo({ radio: 60, lados: 64, rot: [-90, 0, 0], color: '#ff7aa8', metal: 0.7, rugosidad: 0.14, reflejo: 1.6 });
       const ondas = [0, 1, 2].map(() => H.toro({ radio: 1, grosor: 0.02, lados: 64, ladosTubo: 3, rot: [90, 0, 0], pos: [0, 0.03, 0], aditivo: true, color: '#ff9ccc', opacidad: 0.5 }));
       H.animar(t => ondas.forEach((o, k) => {
@@ -44,6 +46,7 @@
       }));
 
       // 3 · LAS CÉLULAS con palabras, unidas por membranas ──────────────
+      H.seccion('3 · Las células con palabras, unidas por membranas');
       const piel = H.mat({ color: A.colorCelula, emisivo: '#ff2f7a', brillo: 0.35, transparente: true, opacidad: 0.5, rugosidad: 0.12, reflejo: 1.3 });
       const nucleo = [0, 8.5, 0];
       const celulas = A.palabras.map((palabra, i) => {
@@ -63,17 +66,19 @@
         membranas.push(H.geo.tubo({ puntos: [p, [(p[0] + sig[0]) / 2 * 0.92, (p[1] + sig[1]) / 2 - 0.6, (p[2] + sig[2]) / 2 * 0.92], sig], radio: 0.18, lados: 8 }));
         membranas.push(H.geo.tubo({ puntos: [p, [p[0] * 0.5, (p[1] + nucleo[1]) / 2 - 1.5, p[2] * 0.5], nucleo], radio: 0.12, lados: 8 }));
       });
-      H.malla(H.fusionar(membranas), piel);
+      H.malla(H.fusionar(membranas, { nombre: 'membranas' }), piel);
       H.animar(t => {               // las células respiran
-        celulas.forEach(c => { const s = 1 + Math.sin(t * 0.9 + c.fase) * 0.05; c.m.scale.set(1.7 * s, 0.8 * s, 1 * s); });
-        const s = 1 + Math.sin(t * 0.6) * 0.03; grande.scale.set(3.6 * s, 1.3 * s, 2 * s);
+        celulas.forEach(c => { const s = 1 + Math.sin(t * 0.9 + c.fase) * 0.05; H.pieza(c.m).scale.set(1.7 * s, 0.8 * s, 1 * s); });
+        const s = 1 + Math.sin(t * 0.6) * 0.03; H.pieza(grande).scale.set(3.6 * s, 1.3 * s, 2 * s);
       });
 
       // 4 · LOS ANILLOS DE LUZ arriba ────────────────────────────────────
+      H.seccion('4 · Los anillos de luz arriba');
       H.candelabro({ pos: [0, 12, 0], radio: 6.5, anillos: 3, separacion: 1.2, cables: 34, caida: 5, color: '#ffe6f2', girar: 0.05 });
 
       // 5 · LA FIGURA DE LUZ ──────────────────────────────────────────────
-      const figura = H.grupo({ pos: [0, 0, 0] });
+      H.seccion('5 · La figura de luz');
+      const figura = H.grupo({ pos: [0, 0, 0], nombre: 'figura de luz' });
       H.malla(H.cuerpo('de pie'), H.mat({ basico: true, color: A.colorFigura }), { padre: figura });
       H.brillo({ padre: figura, pos: [0, 1.2, 0], color: '#ffffff', tamano: 3.5, opacidad: 0.9 });
       H.brillo({ padre: figura, pos: [0, 1.1, 0], color: '#bfe9ff', tamano: 9, opacidad: 0.45 });
@@ -89,6 +94,7 @@
       });
 
       // 6 · CUERPOS translúcidos flotando a lo lejos (el eco del Mundo 1) ─
+      H.seccion('6 · Cuerpos translúcidos flotando a lo lejos');
       const flotantes = [];
       for (let i = 0; i < A.cuerposFlotando; i++) flotantes.push({ a: i / A.cuerposFlotando * Math.PI * 2, r: H.azar(19, 26), y: H.azar(3, 10), rot: [H.azar(0, 360), H.azar(0, 360), H.azar(0, 360)], v: H.azar(0.01, 0.03) });
       const mFlot = H.instancias(H.cuerpo('feto'), H.mat({ color: '#ffd0c0', emisivo: '#ff9a9a', brillo: 0.4, transparente: true, opacidad: 0.35 }), flotantes.map(() => ({})), { mover: true });
@@ -98,6 +104,7 @@
       }));
 
       // 7 · PARTÍCULAS rosas subiendo ────────────────────────────────────
+      H.seccion('7 · Partículas rosas subiendo');
       H.particulas({ cantidad: 400, centro: [0, 5, 0], area: [44, 12, 44], color: '#ffb3d6', tamano: 0.07, velocidad: [0, 0.18, 0], vaiven: 0.1, opacidad: 0.7 });
     },
   });

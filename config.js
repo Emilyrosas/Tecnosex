@@ -10,6 +10,7 @@
      4. MÚSICA        → qué suena en cada mundo  ← AQUÍ CAMBIAS LA MÚSICA
      5. MODELOS 3D    → archivos .glb que quieras poner  ← AQUÍ AGREGAS MODELOS
      6. TEXTOS        → nombres de mundos, narración y diálogos
+     7. CINEMÁTICA    → el video del inicio  ← AQUÍ CAMBIAS O QUITAS EL VIDEO
 
    Regla de oro: cambia un valor, guarda, recarga la página (F5).
    Si algo se rompe, abre la consola del navegador (F12) y lee el error:
@@ -96,17 +97,21 @@ window.CONFIG = {
        tonoRuido  → grave (300) o agudo (1500) del ruido
        oleaje     → true = el ruido sube y baja como olas
        campanas   → notas sueltas que aparecen al azar (0 a 1)
-       latido     → true = un latido grave (corazón)                         */
+       latido     → true = un latido grave (corazón)
+       capas      → sonidos de ambiente que se suman: 'grillos', 'cuervos',
+                    'gaviotas', 'goteo', 'zumbido', 'maquinas', 'crujidos',
+                    'chisporroteo', 'estatica', 'viento'
+                    (los mundos también ponen sonidos en lugares con H.sonido)                         */
   volumen: 0.7,
 
   musica: {
-    1: { archivo: '', volumen: 1, sinte: { nota: 41.2, forma: 'sawtooth', brillo: 240, ruido: 0.05, tonoRuido: 400, campanas: 0.25, latido: true } },
-    2: { archivo: '', volumen: 1, sinte: { nota: 49.0, forma: 'sawtooth', brillo: 420, ruido: 0.22, tonoRuido: 650, campanas: 0.45 } },
-    3: { archivo: '', volumen: 1, sinte: { nota: 55.0, forma: 'square',   brillo: 300, ruido: 0.10, tonoRuido: 1400, campanas: 0.2 } },
-    4: { archivo: '', volumen: 1, sinte: { nota: 36.7, forma: 'sawtooth', brillo: 190, ruido: 0.25, tonoRuido: 500, campanas: 0.12 } },
-    5: { archivo: '', volumen: 1, sinte: { nota: 55.0, forma: 'triangle', brillo: 900, ruido: 0.06, tonoRuido: 2000, campanas: 0.6 } },
-    6: { archivo: '', volumen: 1, sinte: { nota: 65.4, forma: 'sine',     brillo: 700, ruido: 0.35, tonoRuido: 450, oleaje: true, campanas: 0.4 } },
-    7: { archivo: '', volumen: 1, sinte: { nota: 61.7, forma: 'triangle', brillo: 520, ruido: 0.18, tonoRuido: 380, oleaje: true, campanas: 0.5 } },
+    1: { archivo: '', volumen: 1, sinte: { nota: 41.2, forma: 'sawtooth', brillo: 240, ruido: 0.05, tonoRuido: 400, campanas: 0.25, latido: true, capas: ['goteo'] } },
+    2: { archivo: '', volumen: 1, sinte: { nota: 49.0, forma: 'sawtooth', brillo: 420, ruido: 0.22, tonoRuido: 650, campanas: 0.45, capas: ['grillos', 'cuervos', 'viento'] } },
+    3: { archivo: '', volumen: 1, sinte: { nota: 55.0, forma: 'square',   brillo: 300, ruido: 0.10, tonoRuido: 1400, campanas: 0.2, capas: ['zumbido', 'goteo', 'crujidos'] } },
+    4: { archivo: '', volumen: 1, sinte: { nota: 36.7, forma: 'sawtooth', brillo: 190, ruido: 0.25, tonoRuido: 500, campanas: 0.12, capas: ['viento', 'crujidos'] } },
+    5: { archivo: '', volumen: 1, sinte: { nota: 55.0, forma: 'triangle', brillo: 900, ruido: 0.06, tonoRuido: 2000, campanas: 0.6, capas: ['zumbido', 'crujidos'] } },
+    6: { archivo: '', volumen: 1, sinte: { nota: 65.4, forma: 'sine',     brillo: 700, ruido: 0.35, tonoRuido: 450, oleaje: true, campanas: 0.4, capas: ['gaviotas'] } },
+    7: { archivo: '', volumen: 1, sinte: { nota: 61.7, forma: 'triangle', brillo: 520, ruido: 0.18, tonoRuido: 380, oleaje: true, campanas: 0.5, capas: ['gaviotas', 'goteo', 'viento'] } },
     8: { archivo: '', volumen: 1, sinte: { nota: 43.65, forma: 'sawtooth', brillo: 360, ruido: 0.06, tonoRuido: 900, campanas: 0.55, latido: true } },
   },
 
@@ -153,20 +158,20 @@ window.CONFIG = {
   textos: {
     mundos: {
       1: { nombre: 'La Incubadora', subtitulo: 'Donde el deseo todavía no tiene cuerpo',
-           narracion: ['Despertaste.', 'Aquí todos duermen dentro de su propio líquido.', 'Al fondo hay una luz. Camina hacia ella.'] },
-      2: { nombre: 'La Llanura', subtitulo: 'El sol no se pone: se apaga',
-           narracion: ['Afuera nunca termina de anochecer.', 'Alguien construyó todo esto y después se fue.', 'Al final del campo, algo te está mirando.'] },
-      3: { nombre: 'La Fábrica Fría', subtitulo: 'Aquí se fabricaba el deseo en serie',
-           narracion: ['Elegiste la máquina.', 'El sol entra, pero aquí nada se calienta.', 'Las pantallas siguen hablando solas. Sigue hacia el portón.'] },
-      4: { nombre: 'La Torre', subtitulo: 'Nadie ha visto dónde termina',
-           narracion: ['Levanta la mirada.', 'Fue hecha para que recuerdes tu tamaño.', 'La puerta está abierta. Siempre lo estuvo.'] },
-      5: { nombre: 'El Osario', subtitulo: 'Cuerpos que ya no desean',
-           narracion: ['Cientos de cuerpos. Ninguno respira.', 'Brillan como si todavía esperaran a alguien.', 'En el centro, el ojo te reconoce.'] },
-      6: { nombre: 'La Orilla', subtitulo: 'Un lugar para mirar hacia adentro',
-           narracion: ['Elegiste sentir.', 'El mar repite lo mismo una y otra vez, como un pensamiento.', 'Quédate el tiempo que quieras. Las lámparas te muestran el camino.'] },
+           narracion: ['Despertaste.', '¿Están durmiendo?.', 'Al fondo hay una luz. Camina hacia ella.'] },
+      2: { nombre: 'Llanura', subtitulo: 'Era un mundo distinto',
+           narracion: ['Afuera nunca termina de anochecer.', '¿Quién ha construido todo esto?', 'Al final del campo, algo te está mirando.'] },
+      3: { nombre: 'La Fábrica Fría', subtitulo: '...',
+           narracion: ['Elegiste la máquina.', 'El sol entra, pero aquí se siente frío', 'Las pantallas siguen hablando solas.','¿Es lo correcto para mi?' ] },
+      4: { nombre: 'La Torre', subtitulo: '...',
+           narracion: ['Levanta la mirada.', 'Fue hecha para que recuerdes tu tamaño.', 'La puerta está abierta. Siempre lo estuvo.', '¿Aquí estará mi libertad?'] },
+      5: { nombre: 'El Fin', subtitulo: 'Cuerpos que ya no desean',
+           narracion: ['Cientos de cuerpos. Ninguno respira.', 'Brillan como si todavía esperaran a alguien.', 'En el centro, el ojo te reconoce.', '¿Es mi elección o la de alguien más?'] },
+      6: { nombre: 'La Orilla', subtitulo: 'Un lugar para mirar(me)',
+           narracion: ['Elegiste sentir.', 'El mar repite lo mismo una y otra vez, como un pensamiento.', 'Quédate el tiempo que quieras. Así espero que te entiendas'] },
       7: { nombre: 'Las Ruinas', subtitulo: 'Lo que queda cuando el deseo se va',
            narracion: ['Alguien vivió aquí.', 'Dejó las luces encendidas, por si volvía.', 'Al fondo, una puerta sigue abierta.'] },
-      8: { nombre: 'Tecnosexualidad', subtitulo: 'Todo deseo regresa a su origen',
+      8: { nombre: 'Un deseo más', subtitulo: 'Todo deseo regresa a su origen',
            narracion: ['Este es el centro.', 'Deseo, interfaz, carne, código: todo está conectado.', 'Acércate a la luz.'] },
     },
 
@@ -228,5 +233,26 @@ window.CONFIG = {
         { texto: 'Quedarme un poco más',  destino: null },
       ],
     },
+  },
+
+  /* ────────────────────────────────────────────────────────────────────────
+     7 · CINEMÁTICA  ← EL VIDEO DEL INICIO
+     ────────────────────────────────────────────────────────────────────────
+     Un video a pantalla completa, como en un videojuego, antes de empezar el
+     Mundo 1. Cuando termina (o lo saltas) aparece el título y puedes caminar.
+
+       archivo      → ruta del video (.mp4). Pon tu video en la carpeta /video.
+                      '' = sin cinemática.
+       saltable     → true = se puede saltar (botón, clic, Esc, Espacio o Enter)
+       alReiniciar  → true = también se ve al volver al Mundo 1 desde el final
+                      ("Despertar" en el Mundo 8)
+       volumen      → 0 a 1 (se multiplica por el volumen general)
+       textoSaltar  → el texto del botón                                    */
+  cinematica: {
+    archivo: 'video/cinematica-inicio.mp4',
+    saltable: true,
+    alReiniciar: true,
+    volumen: 1,
+    textoSaltar: 'Saltar ›',
   },
 };

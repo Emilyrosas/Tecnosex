@@ -43,11 +43,12 @@
       · MeshBasicMaterial    → ignora la luz, siempre brilla igual (neones)
       · AdditiveBlending     → suma luz: halos, rayos, cables brillantes
 
-   5) RENDIMIENTO. La GPU sufre con muchas "llamadas de dibujo" (una por malla).
-      Por eso usamos dos trucos:
-        · H.fusionar([...])   → junta muchas formas en UNA malla
-        · H.instancias(...)   → cientos de copias de la MISMA forma en UNA llamada
+   5) PIEZAS Y RENDIMIENTO. Cada objeto es su propia <a-entity> (con id y
+      dentro de una sección), así en el INSPECTOR (Ctrl + Alt + I) se puede
+      tocar por separado. Solo las "masas" de miles de cosas iguales (pasto,
+      partículas, hojas…) se dibujan juntas, con H.instancias(..., { masa: true }).
       Y solo existe en memoria el mundo activo: al salir, se destruye.
+      Lo que muevas en el inspector se guarda en ajustes.js (ver §3, EDICIÓN).
    ========================================================================== */
 
 (function () {
@@ -55,6 +56,18 @@
   const THREE = AFRAME.THREE;
   const CONFIG = window.CONFIG;
   const rad = THREE.MathUtils.degToRad;
+
+  /* Arreglo para el INSPECTOR: su puntero revisa qué hay bajo el mouse sin
+     decir desde qué cámara mira. Three.js no sabe medir un halo (Sprite) así,
+     lanza un error y el dibujo se congela. Le prestamos la cámara activa.   */
+  const raycastSprite = THREE.Sprite.prototype.raycast;
+  THREE.Sprite.prototype.raycast = function (raycaster, intersecciones) {
+    if (!raycaster.camera) raycaster.camera = AFRAME.scenes[0] && AFRAME.scenes[0].camera;
+    if (!raycaster.camera) return;
+    return raycastSprite.call(this, raycaster, intersecciones);
+  };
+  // Algo que no se puede tocar con el mouse en el inspector (cielo, niebla, rayos de luz…)
+  const intocable = obj => { obj.raycast = () => {}; return obj; };
   const clamp = THREE.MathUtils.clamp;
 
   // Convierte [x, y, z] en un vector de Three.js
@@ -71,6 +84,7 @@
     nivel: null,                 // el nivel de calidad activo (ver config.js)
     claveCalidad: 'media',
     camaraPos: new THREE.Vector3(), // dónde están tus ojos (lo actualiza el jugador)
+    camaraDerecha: new THREE.Vector3(1, 0, 0),
     joy: { x: 0, y: 0 },         // joystick táctil
   };
 
@@ -381,6 +395,12 @@
   }
 
   function crearGeo(tipo, o) {
+    const g = crearGeoBase(tipo, o);
+    g.userData.tipo = tipo;                       // el inspector usa esto para nombrar la pieza
+    if (o.nombre) g.userData.nombre = o.nombre;
+    return g;
+  }
+  function crearGeoBase(tipo, o) {
     switch (tipo) {
       case 'caja': return new THREE.BoxGeometry(o.ancho ?? 1, o.alto ?? 1, o.fondo ?? 1);
       case 'cilindro': return new THREE.CylinderGeometry(o.radioArriba ?? o.radio ?? 0.5, o.radioAbajo ?? o.radio ?? 0.5, o.alto ?? 1, o.lados ?? 16, 1, !!o.abierto);
@@ -437,9 +457,13 @@
     return g;
   };
 
-  /* FUSIONAR: junta varias geometrías en UNA sola (una sola llamada de dibujo).
-     Úsalo para todo lo que no se mueve por separado: muros, vigas, cables…    */
-  H.fusionar = lista => {
+  /* FUSIONAR: junta varias geometrías.
+       H.fusionar([geo1, geo2, ...])                  → un CONJUNTO: al ponerlo con
+            H.malla cada parte vuelve a ser su propia pieza (se edita por separado
+            en el inspector). Ej: las vigas de un techo, los cables de un cuarto.
+       H.fusionar([...], { unir: true, nombre: 'silla' }) → UNA sola pieza
+            (un cuerpo, una silla, una lámpara: cosas que se mueven enteras).  */
+  H.fusionar = (lista, op = {}) => {
     let nV = 0, nI = 0;
     lista.forEach(g => { nV += g.attributes.position.count; nI += g.index ? g.index.count : g.attributes.position.count; });
     const pos = new Float32Array(nV * 3), nor = new Float32Array(nV * 3), uv = new Float32Array(nV * 2);
@@ -454,7 +478,7 @@
       if (g.index) { const a = g.index.array; for (let i = 0; i < a.length; i++) idx[oI + i] = a[i] + oV; oI += a.length; }
       else { for (let i = 0; i < c; i++) idx[oI + i] = oV + i; oI += c; }
       oV += c;
-      g.dispose();
+      if (op.unir) g.dispose();
     }
     const r = new THREE.BufferGeometry();
     r.setAttribute('position', new THREE.BufferAttribute(pos, 3));
@@ -462,22 +486,85 @@
     r.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
     r.setIndex(new THREE.BufferAttribute(idx, 1));
     r.computeBoundingSphere();
+    if (!op.unir) r.userData.partes = lista;      // se guardan para separarlas después
+    if (op.nombre) r.userData.nombre = op.nombre;
     return r;
   };
 
-  /* ── OBJETOS EN LA ESCENA ─────────────────────────────────────────────── */
+  /* ── PIEZAS: cada objeto es su propia entidad de A-Frame ─────────────────
+     Todo lo que crean las herramientas (H.caja, H.malla, H.brillo, las luces…)
+     vive en su propia <a-entity>, con un id fácil de leer, dentro de la SECCIÓN
+     del mundo a la que pertenece. Así en el INSPECTOR (Ctrl + Alt + I) cada
+     cosa aparece por separado y se puede mover, girar, escalar u ocultar.
+
+       id de ejemplo:  m3-11-linea-de-produccion-cuerpo-4
+                       └mundo └sección              └pieza └número
+
+     Opción común nueva:  nombre: 'mesa'  → cómo se llama la pieza en el inspector */
   function colocar(obj, o) {
     if (o.pos) obj.position.set(o.pos[0] || 0, o.pos[1] || 0, o.pos[2] || 0);
     if (o.rot) obj.rotation.copy(euler(o.rot));
     if (o.esc !== undefined) typeof o.esc === 'number' ? obj.scale.setScalar(o.esc) : obj.scale.set(o.esc[0], o.esc[1], o.esc[2]);
   }
+  const aSlug = s => String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'pieza';
 
-  // H.malla(geometria, material, { pos, rot, esc, padre, solido })
+  // Crea una <a-entity> vacía, con id único, dentro de `padre` (o de la sección actual)
+  function nuevaPieza(nombre, padre) {
+    const padreEl = (padre && padre.el) || E.seccion || E.raiz;
+    const base = aSlug(nombre), prefijo = padreEl === E.raiz ? 'm' + E.id : padreEl.id;
+    const clave = prefijo + '|' + base;
+    const n = E.contador[clave] = (E.contador[clave] || 0) + 1;
+    const el = document.createElement('a-entity');
+    el.id = prefijo + '-' + base + '-' + n;
+    padreEl.appendChild(el);
+    padreEl.object3D.add(el.object3D);           // ya mismo (así se pueden calcular choques)
+    return el;
+  }
+  // Posición / rotación / escala de una pieza (como atributos, para que el inspector las vea)
+  function colocarPieza(el, o) {
+    const p = o.pos, r = o.rot, e = o.esc;
+    if (p) el.setAttribute('position', { x: p[0] || 0, y: p[1] || 0, z: p[2] || 0 });
+    if (r) el.setAttribute('rotation', { x: r[0] || 0, y: r[1] || 0, z: r[2] || 0 });
+    if (e !== undefined) { const v = typeof e === 'number' ? [e, e, e] : e; el.setAttribute('scale', { x: v[0], y: v[1], z: v[2] }); }
+    colocar(el.object3D, o);
+  }
+  // Mete un objeto de Three.js en una pieza nueva. Si el padre es un grupo de
+  // Three.js puro (por ejemplo el cielo), lo agrega ahí directamente.
+  function agregar(obj, o, nombre, tipo = 'mesh') {
+    if (o.padre && !o.padre.el) { colocar(obj, o); o.padre.add(obj); return obj; }
+    const el = nuevaPieza(o.nombre || nombre, o.padre);
+    colocarPieza(el, o);
+    el.setObject3D(tipo, obj);
+    return obj;
+  }
+  // La entidad (object3D) de una pieza: para moverla entera desde una animación
+  H.pieza = obj => (obj.parent && obj.parent.el ? obj.parent : obj);
+
+  /* H.seccion('3 · Cápsulas') → todo lo que crees después va dentro de esta
+     sección (una carpeta en el inspector).                                    */
+  H.seccion = nombre => {
+    E.seccion = null;
+    const el = nuevaPieza(nombre, null);
+    E.seccion = el;
+    return el.object3D;
+  };
+
+  // H.malla(geometria, material, { pos, rot, esc, padre, solido, nombre })
   //   solido: true → el jugador choca con su caja
   H.malla = (geo, mat, o = {}) => {
+    // un CONJUNTO fusionado se vuelve a separar: cada parte es su propia pieza
+    if (geo.userData.partes && !o.unido) {
+      const g = H.grupo({ pos: o.pos, rot: o.rot, esc: o.esc, padre: o.padre, nombre: o.nombre || geo.userData.nombre || 'conjunto' });
+      geo.userData.partes.forEach(parte => H.malla(parte, mat, { padre: g, nombre: parte.userData.nombre || parte.userData.tipo || 'parte', sinSombra: o.sinSombra }));
+      geo.dispose();
+      g.material = mat;
+      if (o.solido) H.solidoDe(g);
+      return g;
+    }
     const m = new THREE.Mesh(geo, mat);
-    colocar(m, o);
-    (o.padre || E.grupo).add(m);
+    // lo que solo es luz (aditivo) o atmósfera no tapa los clics del inspector
+    if (o.sinClic || mat.blending === THREE.AdditiveBlending) intocable(m);
+    agregar(m, o, geo.userData.nombre || geo.userData.tipo || 'pieza');
     if (o.solido) H.solidoDe(m);
     if (o.sinSombra) m.userData.sinSombra = true;
     return m;
@@ -489,12 +576,50 @@
      o un material ya hecho:  H.caja({ ..., mat: miMaterial })                 */
   TIPOS.forEach(t => { H[t] = (o = {}) => H.malla(crearGeo(t, o), o.mat || H.mat(o), o); });
 
-  H.grupo = (o = {}) => { const g = new THREE.Group(); colocar(g, o); (o.padre || E.grupo).add(g); return g; };
+  // H.grupo({ pos, rot, esc, padre, nombre }) → una pieza vacía que agrupa a otras
+  H.grupo = (o = {}) => {
+    if (o.padre && !o.padre.el) { const g = new THREE.Group(); colocar(g, o); o.padre.add(g); return g; }
+    const el = nuevaPieza(o.nombre || 'grupo', o.padre);
+    colocarPieza(el, o);
+    return el.object3D;
+  };
 
-  /* INSTANCIAS: muchas copias de la misma forma en una sola llamada de dibujo.
-       H.instancias(geometria, material, [ { pos, rot, esc, color }, ... ])
-     Para mover una copia en una animación: H.moverInstancia(malla, i, {pos, rot, esc}) */
+  /* COPIAS: muchas piezas con la misma forma, cada una en su lugar.
+       H.instancias(geometria, material, [ { pos, rot, esc, color }, ... ], { nombre })
+     Cada copia es su propia pieza (un grupo con todas las copias adentro).
+     Para mover una copia en una animación: H.moverInstancia(grupo, i, { pos, rot, esc })
+
+     masa: true → para miles de cosas iguales (pasto, hojas, ventanitas): se
+     dibujan todas juntas en UNA pieza, porque separadas el juego se volvería
+     lentísimo. Se cambian desde el código (cantidad, zona, color).        */
   H.instancias = (geo, mat, lista, o = {}) => {
+    if (!o.masa) {
+      const nombre = o.nombre || geo.userData.nombre || geo.userData.tipo || 'pieza';
+      const porColor = {}, piezas = [];
+      const materialDe = it => {
+        if (!it.color) return mat;
+        const c = new THREE.Color(it.color), k = c.getHexString();
+        if (!porColor[k]) { porColor[k] = mat.clone(); porColor[k].color.copy(mat.color).multiply(c); }
+        return porColor[k];
+      };
+      /* dentroDe: otro grupo de copias → la copia i va DENTRO de la pieza i de ese
+         grupo (y su pos/rot/esc son relativas a ella). Así, por ejemplo, cada
+         cápsula lleva adentro su vidrio y su cuerpo, y se mueven juntos.    */
+      if (o.dentroDe) {
+        lista.forEach((it, i) => {
+          const padre = o.dentroDe.userData.piezas[i];
+          if (padre) piezas.push(H.pieza(H.malla(geo, materialDe(it), { pos: it.pos, rot: it.rot, esc: it.esc, padre, nombre: o.pieza || o.nombre || nombre, sinSombra: o.sinSombra, unido: true })));
+        });
+        return { userData: { piezas }, material: mat };
+      }
+      const g = H.grupo({ nombre: o.nombre || nombre + 's', padre: o.padre });
+      lista.forEach(it => {
+        piezas.push(H.pieza(H.malla(geo, materialDe(it), { pos: it.pos, rot: it.rot, esc: it.esc, padre: g, nombre: o.pieza || geo.userData.nombre || nombre, sinSombra: o.sinSombra, unido: true })));
+      });
+      g.userData.piezas = piezas;
+      g.material = mat;
+      return g;
+    }
     const m = new THREE.InstancedMesh(geo, mat, Math.max(1, lista.length));
     m.count = lista.length;
     lista.forEach((it, i) => {
@@ -507,10 +632,14 @@
     m.userData.lista = lista;
     if (o.sinSombra) m.userData.sinSombra = true;
     if (o.mover) m.frustumCulled = false;   // si las copias se mueven mucho
-    (o.padre || E.grupo).add(m);
+    agregar(m, { padre: o.padre, nombre: o.nombre }, (geo.userData.nombre || 'masa') + ' (masa)');
     return m;
   };
-  H.moverInstancia = (m, i, it) => { m.setMatrixAt(i, matrizDe(it)); m.instanceMatrix.needsUpdate = true; };
+  H.moverInstancia = (m, i, it) => {
+    if (m.isInstancedMesh) { m.setMatrixAt(i, matrizDe(it)); m.instanceMatrix.needsUpdate = true; return; }
+    const p = m.userData.piezas[i];
+    if (p) colocar(p, it);
+  };
 
   // Halo de luz que siempre mira a la cámara (barato y muy efectivo)
   H.brillo = (o = {}) => {
@@ -520,8 +649,7 @@
     }));
     const t = o.tamano ?? 1;
     Array.isArray(t) ? s.scale.set(t[0], t[1], 1) : s.scale.set(t, t, 1);
-    if (o.pos) s.position.set(o.pos[0], o.pos[1], o.pos[2]);
-    (o.padre || E.grupo).add(s);
+    agregar(s, { padre: o.padre, pos: o.pos, nombre: o.nombre }, 'brillo');
     return s;
   };
 
@@ -547,9 +675,9 @@
       transparent: true, opacity: o.opacidad ?? 0.7, depthWrite: false, sizeAttenuation: true,
       blending: aditivo ? THREE.AdditiveBlending : THREE.NormalBlending, fog: !aditivo,
     });
-    const pts = new THREE.Points(geo, mat);
+    const pts = intocable(new THREE.Points(geo, mat));
     pts.frustumCulled = false;
-    (o.padre || E.grupo).add(pts);
+    agregar(pts, { padre: o.padre, nombre: o.nombre }, 'particulas');
     const v = o.velocidad ?? [0, 0.1, 0], vaiven = o.vaiven ?? 0.15;
     H.animar((t, dt) => {
       for (let i = 0; i < n; i++) {
@@ -584,8 +712,7 @@
     const alto = o.alto ?? 0.5;
     s.scale.set(alto * c.width / c.height, alto, 1);
     s.renderOrder = 1;                       // se dibuja después de lo transparente (se lee mejor)
-    if (o.pos) s.position.set(o.pos[0], o.pos[1], o.pos[2]);
-    (o.padre || E.grupo).add(s);
+    agregar(s, { padre: o.padre, pos: o.pos, nombre: o.nombre }, 'texto ' + o.texto);
     return s;
   };
 
@@ -597,14 +724,15 @@
             [x,y,z] = DE DÓNDE viene la luz. sombra: true = sombras reales
             (solo si la calidad lo permite). area = tamaño de la zona con sombra.
        H.luzPunto(color, intensidad, alcance, [x,y,z]) → un foco / bombilla   */
-  H.luzAmbiente = (color, i = 1) => { const l = new THREE.AmbientLight(color, i); E.grupo.add(l); return l; };
-  H.luzHemisferio = (cielo, suelo, i = 1) => { const l = new THREE.HemisphereLight(cielo, suelo, i); E.grupo.add(l); return l; };
+  H.luzAmbiente = (color, i = 1) => agregar(new THREE.AmbientLight(color, i), {}, 'luz ambiente', 'light');
+  H.luzHemisferio = (cielo, suelo, i = 1) => agregar(new THREE.HemisphereLight(cielo, suelo, i), {}, 'luz hemisferio', 'light');
   H.luzSol = (color, i = 2, dir = [1, 2, 1], o = {}) => {
     const l = new THREE.DirectionalLight(color, i);
     const centro = V3(o.centro ?? [0, 0, 0]);
     l.position.copy(centro).addScaledVector(V3(dir).normalize(), 80);
     l.target.position.copy(centro);
-    E.grupo.add(l, l.target);
+    agregar(l, {}, 'luz sol', 'light');
+    E.raiz.object3D.add(l.target);
     if (o.sombra && TECNO.nivel.sombras) {
       l.castShadow = true;
       const a = o.area ?? 30, cam = l.shadow.camera;
@@ -616,10 +744,7 @@
     return l;
   };
   H.luzPunto = (color, i = 5, alcance = 10, pos = [0, 2, 0], padre) => {
-    const l = new THREE.PointLight(color, i, alcance, 1.5);
-    l.position.set(pos[0], pos[1], pos[2]);
-    (padre || E.grupo).add(l);
-    return l;
+    return agregar(new THREE.PointLight(color, i, alcance, 1.5), { pos, padre }, 'luz', 'light');
   };
 
   /* ── ENTIDADES DE A-FRAME (los objetos interactivos) ─────────────────────
@@ -628,21 +753,18 @@
        H.zona({...})   → zona invisible que abre un diálogo (componente zona-dialogo)
        H.modelo({...}) → un modelo .glb/.gltf
      Sus opciones están explicadas en §5.                                    */
-  function sinPosicion(o) { const r = { ...o }; delete r.pos; delete r.rot; delete r.esc; return r; }
-  H.entidad = (componentes, o = {}) => {
-    const el = document.createElement('a-entity');
+  function sinPosicion(o) { const r = { ...o }; delete r.pos; delete r.rot; delete r.esc; delete r.nombre; return r; }
+  H.entidad = (componentes, o = {}, nombre = 'entidad') => {
+    const el = nuevaPieza(o.nombre || nombre, o.padre);
+    colocarPieza(el, o);
     for (const k in componentes) el.setAttribute(k, componentes[k]);
-    if (o.pos) el.setAttribute('position', { x: o.pos[0], y: o.pos[1], z: o.pos[2] });
-    if (o.rot) el.setAttribute('rotation', { x: o.rot[0], y: o.rot[1], z: o.rot[2] });
-    if (o.esc !== undefined) { const e = typeof o.esc === 'number' ? [o.esc, o.esc, o.esc] : o.esc; el.setAttribute('scale', { x: e[0], y: e[1], z: e[2] }); }
-    E.raiz.appendChild(el);
     return el;
   };
-  H.orbe = o => H.entidad({ 'orbe-vigia': sinPosicion(o) }, o);
-  H.portal = o => H.entidad({ portal: sinPosicion(o) }, o);
-  H.zona = o => H.entidad({ 'zona-dialogo': sinPosicion(o) }, o);
+  H.orbe = o => H.entidad({ 'orbe-vigia': sinPosicion(o) }, o, 'orbe');
+  H.portal = o => H.entidad({ portal: sinPosicion(o) }, o, 'portal');
+  H.zona = o => H.entidad({ 'zona-dialogo': sinPosicion(o) }, o, 'zona');
   H.modelo = o => {
-    const el = H.entidad({ 'gltf-model': `url(${o.url})` }, o);
+    const el = H.entidad({ 'gltf-model': `url(${o.url})` }, o, 'modelo');
     el.addEventListener('model-error', () => console.warn('No se pudo cargar el modelo', o.url, '(¿abriste la página con un servidor local?)'));
     return el;
   };
@@ -652,15 +774,47 @@
   //   t = segundos desde que empezó todo · dt = segundos desde el cuadro anterior
   H.animar = fn => { E.animadores.push(fn); return fn; };
 
+  /* SONIDO EN UN LUGAR: suena más fuerte cuanto más cerca estás, y a la
+     izquierda o derecha según hacia dónde miras.
+       H.sonido({ pos: [x, y, z], tipo: 'estatica', radio: 8, volumen: 1 })
+     tipos: los de Sonido.capa (§7): estatica, zumbido, maquinas, chisporroteo… */
+  H.sonido = (o = {}) => {
+    const p = V3(o.pos || [0, 0, 0]), radio = o.radio ?? 10, vol = o.volumen ?? 1;
+    let capa = null, pan = null, ultimo = -1;
+    H.animar(() => {
+      const S = TECNO.sonido;
+      if (!S.ctx) return;                               // el sonido se enciende con "Entrar"
+      if (!capa) {
+        pan = S.ctx.createStereoPanner ? S.ctx.createStereoPanner() : S.ctx.createGain();
+        pan.connect(S.maestro);
+        capa = S.capa(o.tipo, pan, 0);
+        const c = capa, pn = pan;
+        E.limpiezas.push(() => { c.detener(); setTimeout(() => pn.disconnect(), 1700); });
+      }
+      const cam = TECNO.camaraPos, d = cam.distanceTo(p), cerca = Math.max(0, 1 - d / radio);
+      const g = vol * cerca * cerca;
+      if (Math.abs(g - ultimo) > 0.005) { capa.salida.gain.setTargetAtTime(g, S.ctx.currentTime, 0.1); ultimo = g; }
+      if (pan.pan) {
+        const R = TECNO.camaraDerecha, dx = p.x - cam.x, dz = p.z - cam.z, len = Math.hypot(dx, dz) || 1;
+        pan.pan.value = clamp((dx * R.x + dz * R.z) / len, -1, 1) * 0.8;
+      }
+    });
+  };
+
   /* ── COLISIONES ──────────────────────────────────────────────────────────
      H.solido(x, z, ancho, fondo)  → un rectángulo invisible en el suelo
      H.solidoDe(objeto)            → usa la caja que envuelve a un objeto     */
   H.solido = (x, z, ancho, fondo) => E.solidos.push({ minX: x - ancho / 2, maxX: x + ancho / 2, minZ: z - fondo / 2, maxZ: z + fondo / 2 });
   H.solidoDe = obj => {
-    obj.updateWorldMatrix(true, true);
-    const b = new THREE.Box3().setFromObject(obj);
-    E.solidos.push({ minX: b.min.x, maxX: b.max.x, minZ: b.min.z, maxZ: b.max.z, minY: b.min.y, maxY: b.max.y });
+    const s = { obj };
+    medirSolido(s);
+    E.solidos.push(s);
   };
+  function medirSolido(s) {
+    s.obj.updateWorldMatrix(true, true);
+    const b = new THREE.Box3().setFromObject(s.obj);
+    Object.assign(s, { minX: b.min.x, maxX: b.max.x, minZ: b.min.z, maxZ: b.max.z, minY: b.min.y, maxY: b.max.y });
+  }
 
   /* ── PIEZAS COMPUESTAS QUE SE REPITEN ENTRE MUNDOS ─────────────────────── */
 
@@ -708,7 +862,7 @@
       seg(cadera, rodilla, 0.072); seg(rodilla, tobillo, 0.05);
       seg(tobillo, tobillo.clone().add(V(0, Math.sin(a3), Math.cos(a3)).multiplyScalar(0.13)), 0.04);
     }
-    const g = H.fusionar(partes);
+    const g = H.fusionar(partes, { unir: true, nombre: 'cuerpo' });
     g.computeBoundingBox();
     const bb = g.boundingBox;
     g.translate(-(bb.min.x + bb.max.x) / 2, -bb.min.y, -(bb.min.z + bb.max.z) / 2);
@@ -768,6 +922,75 @@
     return g;
   };
 
+  /* H.crt({ pos, rot, color, apagado, sonido }) → monitor viejo de tubo (maqueta).
+     Todos los monitores de un mundo comparten la misma pantalla animada.
+       apagado: true → pantalla negra · sonido: true → estática que oyes al acercarte */
+  H.crt = (o = {}) => {
+    const g = H.grupo({ pos: o.pos, rot: o.rot, padre: o.padre, nombre: o.nombre || 'monitor' });
+    if (!E.texCrt) E.texCrt = H.texPantalla(o.color ?? '#bfe8ff');
+    if (!E.geoCrt) E.geoCrt = H.fusionar([
+      H.geo.caja({ ancho: 0.55, alto: 0.45, fondo: 0.42, pos: [0, 0.225, 0] }),
+      H.geo.caja({ ancho: 0.4, alto: 0.32, fondo: 0.25, pos: [0, 0.21, -0.32] }),
+    ], { unir: true, nombre: 'carcasa' });
+    H.malla(E.geoCrt, H.mat({ color: o.carcasa ?? '#b9b09c', rugosidad: 0.7 }), { padre: g });
+    if (o.apagado) {
+      H.plano({ padre: g, ancho: 0.44, alto: 0.33, pos: [0, 0.23, 0.215], color: '#0c0f10', metal: 0.6, rugosidad: 0.15, reflejo: 1.5 });
+    } else {
+      H.plano({ padre: g, ancho: 0.44, alto: 0.33, pos: [0, 0.23, 0.215], basico: true, textura: E.texCrt, color: '#a9bcc4' });
+      H.brillo({ padre: g, pos: [0, 0.23, 0.45], color: o.color ?? '#a9d6ff', tamano: 1.2, opacidad: 0.28 });
+      if (o.sonido) { g.updateWorldMatrix(true, false); const w = new THREE.Vector3().setFromMatrixPosition(g.matrixWorld); H.sonido({ pos: [w.x, w.y, w.z], tipo: 'estatica', radio: o.radioSonido ?? 6, volumen: 0.6 }); }
+    }
+    return g;
+  };
+
+  /* H.nieblaBaja({ centro: [x, y, z], area: [ancho, fondo], capas, color, opacidad })
+     → bancos de niebla a ras del suelo que se mueven despacio.                */
+  H.nieblaBaja = (o = {}) => {
+    const c = o.centro ?? [0, 0.8, 0], area = o.area ?? [40, 40], n = o.capas ?? 4, mats = [];
+    for (let k = 0; k < n; k++) {
+      const m = H.plano({
+        ancho: area[0], alto: area[1], rot: [-90, 0, 0], pos: [c[0], c[1] + k * (o.separacion ?? 0.35), c[2]],
+        textura: H.tex('nubes', [2, 2]), color: o.color ?? '#ffffff', transparente: true, opacidad: o.opacidad ?? 0.3, doble: true,
+        sinClic: true, nombre: 'niebla baja',
+      });
+      m.userData.sinSombra = true;
+      mats.push(m.material);
+    }
+    H.animar((t, dt) => mats.forEach((m, k) => { m.map.offset.x += dt * 0.004 * (k % 2 ? 1 : -1); m.map.offset.y += dt * 0.002 * (k + 1); }));
+  };
+
+  /* H.bandada({ centro: [x, y, z], radio, cantidad, color, tamano, velocidad })
+     → pájaros (dos alitas) que vuelan en círculos.                            */
+  H.bandada = (o = {}) => {
+    const n = H.cantidad(o.cantidad ?? 12), c = o.centro ?? [0, 20, 0], s = o.tamano ?? 0.5;
+    const ave = H.fusionar([
+      H.geo.caja({ ancho: 0.6, alto: 0.03, fondo: 0.18, pos: [-0.28, 0.06, 0], rot: [0, 0, 18] }),
+      H.geo.caja({ ancho: 0.6, alto: 0.03, fondo: 0.18, pos: [0.28, 0.06, 0], rot: [0, 0, -18] }),
+    ]);
+    const aves = [];
+    for (let i = 0; i < n; i++) aves.push({ a: H.azar(0, Math.PI * 2), r: (o.radio ?? 15) * H.azar(0.6, 1.2), y: c[1] + H.azar(-3, 3), v: (o.velocidad ?? 0.12) * H.azar(0.7, 1.3), f: H.azar(0, 6) });
+    const m = H.instancias(ave, H.mat({ color: o.color ?? '#140c10', rugosidad: 1, doble: true }), aves.map(() => ({})), { mover: true, sinSombra: true });
+    H.animar(t => aves.forEach((b, i) => {
+      const a = b.a + t * b.v, aleteo = 1 + Math.sin(t * 9 + b.f) * 0.6;
+      H.moverInstancia(m, i, { pos: [c[0] + Math.cos(a) * b.r, b.y + Math.sin(t * 0.5 + b.f), c[2] + Math.sin(a) * b.r], rot: [0, -a * 57.3, Math.sin(t * 2 + b.f) * 15], esc: [s, s * aleteo, s] });
+    }));
+    return m;
+  };
+
+  /* H.rayos({ pos: [x, y, z], color, cantidad, largo, ancho, opacidad, abanico })
+     → rayos de luz falsos en abanico (ideal detrás del sol o de una ventana). */
+  H.rayos = (o = {}) => {
+    const n = o.cantidad ?? 6, lista = [];
+    for (let i = 0; i < n; i++) {
+      const s = H.brillo({ pos: o.pos, color: o.color ?? '#ffd2a0', tamano: [o.ancho ?? 4, o.largo ?? 60], opacidad: o.opacidad ?? 0.08 });
+      s.material.rotation = ((i / Math.max(1, n - 1)) - 0.5) * (o.abanico ?? 1.2) + Math.PI;
+      s.userData.base = s.material.opacity; s.userData.f = H.azar(0, 6);
+      lista.push(s);
+    }
+    H.animar(t => lista.forEach(s => { s.material.opacity = s.userData.base * (0.7 + Math.sin(t * 0.4 + s.userData.f) * 0.3); }));
+    return lista;
+  };
+
   /* H.muro({ desde: [x, z], hasta: [x, z], alto, grosor, huecos, roto, modulo })
      → lista de geometrías de un muro (para fusionar), con:
         huecos: [{ centro, ancho, base, alto }]  centro = metros desde "desde"
@@ -801,7 +1024,8 @@
         piezas.push(H.geo.caja({ ancho: ancho + 0.01, alto: y2 - y1, fondo: grosor, pos: [x, y0 + (y1 + y2) / 2, z], rot: [0, giro, 0] }));
       });
     }
-    return piezas;
+    // el muro entero es UNA pieza (va en una lista para poder juntarlo con otros)
+    return piezas.length ? [H.fusionar(piezas, { unir: true, nombre: o.nombre || 'muro' })] : [];
   };
 
   /* H.pasto({...}) → miles de hojas de pasto que se mecen con el viento.
@@ -837,7 +1061,7 @@
       const h = H.azar(altos[0], altos[1]);
       lista.push({ pos: [x, y, z], rot: [H.azar(-15, 15), H.azar(0, 360), 0], esc: [H.azar(0.8, 1.6), h, 1], color: base.clone().offsetHSL(H.azar(-0.03, 0.03), 0, H.azar(-0.12, 0.08)) });
     }
-    const m = H.instancias(hoja, mat, lista, { sinSombra: true });
+    const m = H.instancias(hoja, mat, lista, { sinSombra: true, masa: true, nombre: o.nombre || 'pasto' });
     H.animar(t => { uTiempo.value = t; });
     return m;
   };
@@ -877,6 +1101,7 @@
     const cielo = new THREE.Group();
     const esfera = new THREE.Mesh(new THREE.SphereGeometry(r, 32, 16), new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, fog: false, depthWrite: false }));
     esfera.renderOrder = -10;
+    intocable(esfera);
     cielo.add(esfera);
     // 3) el sol (dos halos)
     if (c.sol) {
@@ -920,8 +1145,81 @@
     });
     if (viejo.raiz.parentNode) viejo.raiz.parentNode.removeChild(viejo.raiz);
     if (viejo.env) viejo.env.dispose();
+    viejo.limpiezas.forEach(f => { try { f(); } catch (e) { /* nada */ } });   // apaga sus sonidos
     escena.object3D.environment = null;
   }
+
+  /* EDICIÓN CON EL INSPECTOR
+     ------------------------------------------------------------------------
+     1. Abre el inspector con Ctrl + Alt + I. Cada pieza tiene su id.
+     2. Mueve, gira, escala o borra las piezas que quieras.
+     3. Cierra el inspector (Ctrl + Alt + I), abre Ajustes (Esc) y pulsa
+        "Copiar cambios de este mundo".
+     4. Pega lo copiado al final de ajustes.js y guarda. Al recargar, tus
+        cambios se aplican solos encima de lo que arma el código.            */
+  const r3 = v => Math.round(v * 1000) / 1000;
+  const transformDe = o3 => ({
+    pos: o3.position.toArray().map(r3),
+    rot: [o3.rotation.x, o3.rotation.y, o3.rotation.z].map(a => Math.round(THREE.MathUtils.radToDeg(a) * 100) / 100),
+    esc: o3.scale.toArray().map(r3),
+    visible: o3.visible,
+  });
+  const distinto = (a, b, tol) => a.some((v, i) => Math.abs(v - b[i]) > tol);
+  const Edicion = {
+    recordar() {
+      E.originales = {};
+      E.raiz.querySelectorAll('a-entity[id]').forEach(el => { E.originales[el.id] = transformDe(el.object3D); });
+      // lo que se mueve solo (cuerpos en la cinta, anillos que giran…) no cuenta como cambio
+      E.animadas = new Set();
+      const mundo = E;
+      setTimeout(() => {
+        if (E !== mundo) return;
+        for (const id in E.originales) {
+          const el = document.getElementById(id), o = E.originales[id];
+          if (!el) continue;
+          const t = transformDe(el.object3D);
+          if (distinto(t.pos, o.pos, 0.001) || distinto(t.rot, o.rot, 0.05) || distinto(t.esc, o.esc, 0.001)) E.animadas.add(id);
+        }
+      }, 1500);
+    },
+    aplicar(id) {
+      const lista = (window.AJUSTES || {})[id];
+      if (!lista) return;
+      for (const pid in lista) {
+        const el = document.getElementById(pid), a = lista[pid];
+        if (!el) { console.warn('ajustes.js: la pieza "' + pid + '" ya no existe en el mundo ' + id); continue; }
+        if (a.oculto) { el.setAttribute('visible', false); el.object3D.visible = false; }
+        colocarPieza(el, a);
+      }
+      // los choques se recalculan con las piezas en su nuevo lugar
+      E.solidos = E.solidos.filter(s => !s.obj || s.obj.visible !== false);
+      E.solidos.forEach(s => { if (s.obj) medirSolido(s); });
+    },
+    // Compara cada pieza con cómo la dejó el código y copia las diferencias
+    copiar() {
+      if (!E) return;
+      const cambios = {};
+      for (const id in E.originales) {
+        if (E.animadas.has(id)) continue;
+        const el = document.getElementById(id), o = E.originales[id];
+        if (!el) { cambios[id] = { oculto: true }; continue; }
+        const t = transformDe(el.object3D), c = {};
+        if (distinto(t.pos, o.pos, 0.001)) c.pos = t.pos;
+        if (distinto(t.rot, o.rot, 0.05)) c.rot = t.rot;
+        if (distinto(t.esc, o.esc, 0.001)) c.esc = t.esc;
+        if (!t.visible && o.visible) c.oculto = true;
+        if (Object.keys(c).length) cambios[id] = c;
+      }
+      const n = Object.keys(cambios).length;
+      if (!n) { TECNO.aviso('No hay cambios en este mundo'); return; }
+      const lineas = Object.entries(cambios).map(([k, v]) => `  '${k}': ${JSON.stringify(v).replace(/"(\w+)":/g, '$1: ')},`);
+      const texto = `AJUSTES[${E.id}] = {\n${lineas.join('\n')}\n};\n`;
+      const listo = () => TECNO.aviso(n + ' cambios copiados: pégalos al final de ajustes.js');
+      if (navigator.clipboard) navigator.clipboard.writeText(texto).then(listo, () => { console.log(texto); TECNO.aviso('No pude copiar: el texto está en la consola (F12)'); });
+      else { console.log(texto); TECNO.aviso('El texto está en la consola (F12)'); }
+    },
+  };
+  TECNO.copiarCambios = () => Edicion.copiar();
 
   // Construye el mundo número `id`. Si conservarPosicion = true, no mueve al jugador.
   TECNO.cargarMundo = (id, conservarPosicion) => {
@@ -932,7 +1230,7 @@
     const raiz = document.createElement('a-entity');
     raiz.setAttribute('id', 'mundo-' + id);
     escena.appendChild(raiz);
-    E = { id, def, raiz, grupo: raiz.object3D, solidos: [], animadores: [], env: null, usaSombras: false };
+    E = { id, def, raiz, grupo: raiz.object3D, solidos: [], animadores: [], limpiezas: [], env: null, usaSombras: false, seccion: null, contador: {} };
     renderer.shadowMap.enabled = !!TECNO.nivel.sombras;
     aplicarAmbiente(def);
     try {
@@ -941,7 +1239,10 @@
       console.error('Error construyendo el mundo ' + id + ':', err);
       TECNO.aviso('Error en el mundo ' + id + ' — abre la consola (F12)');
     }
+    E.seccion = null;
     (CONFIG.modelos[id] || []).forEach(m => H.modelo(m));
+    Edicion.recordar();                       // cómo quedó cada pieza según el código…
+    Edicion.aplicar(id);                      // …y los cambios que guardaste en ajustes.js
     // sombras: todo lo sólido proyecta y recibe (menos lo que brilla o es transparente)
     if (E.usaSombras) E.grupo.traverse(o => {
       if (o.isMesh && !o.userData.sinSombra && !o.material.transparent && !o.material.isMeshBasicMaterial) o.castShadow = o.receiveShadow = true;
@@ -972,11 +1273,14 @@
     ui.velo.classList.add('activo');
     setTimeout(() => {
       TECNO.cargarMundo(id);
-      setTimeout(() => {
+      const revelar = () => setTimeout(() => {
         ui.velo.classList.remove('activo');
         TECNO.presentarMundo();
         setTimeout(() => { TECNO.transicionando = false; TECNO.bloqueado = false; }, 800);
       }, 300);
+      // al volver al Mundo 1 (el ciclo reinicia) se repite la cinemática
+      const cin = ajustesCinematica();
+      if (id === 1 && cin.alReiniciar) TECNO.cinematica(revelar); else revelar();
     }, 1500);
   };
 
@@ -1058,6 +1362,7 @@
       this.adelante.y = 0;
       this.adelante.normalize().negate();
       this.derecha.set(-this.adelante.z, 0, this.adelante.x);
+      TECNO.camaraDerecha = this.derecha;          // lo usan los sonidos para saber qué está a tu izquierda
       this.objetivo.set(0, 0, 0).addScaledVector(this.adelante, f).addScaledVector(this.derecha, r);
       if (this.objetivo.lengthSq() > 1) this.objetivo.normalize();
       const corre = k.ShiftLeft || k.ShiftRight;
@@ -1307,11 +1612,54 @@
     ui.aviso._t = setTimeout(() => ui.aviso.classList.remove('visible'), 2600);
   };
 
+  /* CINEMÁTICA: un video a pantalla completa (se configura en config.js → cinematica).
+     Mientras se ve, no puedes caminar. Al terminar (o al saltarla) llama a alTerminar().
+     Si config.js no tiene la sección "cinematica", se usan estos valores por defecto. */
+  const ajustesCinematica = () => ({
+    archivo: 'video/cinematica-inicio.mp4', saltable: true, alReiniciar: true, volumen: 1, textoSaltar: 'Saltar ›',
+    ...(CONFIG.cinematica || {}),
+  });
+  TECNO.enCinematica = false;
+  TECNO.cinematica = alTerminar => {
+    const cin = ajustesCinematica();
+    if (!cin.archivo) { alTerminar(); return; }
+    const caja = ui.cinematica, video = ui.cinematicaVideo;
+    let terminado = false;
+    const terminar = () => {
+      if (terminado) return;
+      terminado = true;
+      TECNO.saltarCinematica = () => {};
+      caja.classList.remove('visible');             // fundido de salida
+      setTimeout(() => {
+        video.pause();
+        video.removeAttribute('src'); video.load();  // libera la memoria del video
+        caja.hidden = true;
+        TECNO.enCinematica = false;
+        alTerminar();
+      }, 900);
+    };
+    TECNO.enCinematica = true;
+    TECNO.bloqueado = true;
+    TECNO.saltarCinematica = terminar;
+    Sonido.callar();                                  // que no se encime la música del mundo
+    video.onended = terminar;
+    video.onerror = () => { console.warn('No se pudo reproducir la cinemática "' + cin.archivo + '" → sigo sin ella.'); terminar(); };
+    video.volume = Sonido.silencio ? 0 : Math.min(1, Sonido.volumen * (cin.volumen ?? 1));
+    video.src = cin.archivo;
+    ui.saltarCinematica.textContent = cin.textoSaltar || 'Saltar ›';
+    ui.saltarCinematica.hidden = cin.saltable === false;
+    caja.hidden = false;
+    requestAnimationFrame(() => caja.classList.add('visible'));
+    const p = video.play();
+    if (p && p.catch) p.catch(err => { console.warn('El navegador no dejó reproducir la cinemática:', err.message); terminar(); });
+  };
+  TECNO.saltarCinematica = () => {};
+
   const Interfaz = {
     iniciar() {
-      const ids = ['inicio', 'entrar', 'velo', 'titulo', 'titulo-numero', 'titulo-nombre', 'titulo-sub', 'subtitulos', 'pista', 'aviso',
+      const ids = ['inicio', 'entrar', 'velo', 'cinematica', 'cinematica-video', 'saltar-cinematica', 'titulo', 'titulo-numero', 'titulo-nombre', 'titulo-sub', 'subtitulos', 'pista', 'aviso',
         'dialogo', 'dialogo-quien', 'dialogo-texto', 'dialogo-opciones', 'dialogo-ayuda', 'panel', 'boton-panel', 'cerrar-panel',
-        'fps', 'joystick', 'joystick-bola', 'lista-mundos', 'seccion-mundos', 'volumen', 'silencio', 'ver-fps'];
+        'fps', 'joystick', 'joystick-bola', 'lista-mundos', 'seccion-mundos', 'volumen', 'silencio', 'ver-fps', 'copiar-cambios', 'abrir-inspector'];
       ids.forEach(id => { ui[id.replace(/-(\w)/g, (_, c) => c.toUpperCase())] = document.getElementById(id); });
 
       // botones de calidad (en la pantalla de inicio y en el panel)
@@ -1340,21 +1688,55 @@
       ui.entrar.addEventListener('click', () => {
         ui.inicio.classList.add('oculto');
         Sonido.iniciar();
-        TECNO.bloqueado = false;
-        TECNO.presentarMundo();
+        const empezar = () => { TECNO.bloqueado = false; TECNO.presentarMundo(); };
+        // en el Mundo 1 primero va la cinemática (play() dentro del clic → el navegador deja sonar el video)
+        if (TECNO.actual && TECNO.actual.id === 1) TECNO.cinematica(empezar); else empezar();
       });
+
+      // saltar la cinemática: botón o clic sobre el video
+      const saltar = e => { e.stopPropagation(); if (ajustesCinematica().saltable !== false) TECNO.saltarCinematica(); };
+      ui.saltarCinematica.addEventListener('click', saltar);
+      ui.cinematica.addEventListener('click', saltar);
 
       // panel
       ui.botonPanel.addEventListener('click', () => Interfaz.panel(!TECNO.panelAbierto));
+
+      // pantalla completa de TODA la página (así los textos y diálogos no se pierden)
+      const botonPantalla = document.getElementById('boton-pantalla');
+      if (!document.fullscreenEnabled) botonPantalla.hidden = true;     // p. ej. iPhone
+      botonPantalla.addEventListener('click', () => Interfaz.pantallaCompleta());
+      document.addEventListener('fullscreenchange', () => {
+        botonPantalla.textContent = document.fullscreenElement ? '✕' : '⛶';
+        botonPantalla.title = document.fullscreenElement ? 'Salir de pantalla completa (P)' : 'Pantalla completa (P)';
+      });
       ui.cerrarPanel.addEventListener('click', () => Interfaz.panel(false));
       ui.volumen.value = Sonido.volumen;
       ui.volumen.addEventListener('input', () => Sonido.ponerVolumen(parseFloat(ui.volumen.value)));
       ui.silencio.addEventListener('click', () => Sonido.alternarSilencio());
       ui.verFps.addEventListener('change', () => ui.fps.classList.toggle('visible', ui.verFps.checked));
+      ui.copiarCambios.addEventListener('click', () => Edicion.copiar());
+      ui.abrirInspector.addEventListener('click', () => { Interfaz.panel(false); escena.components.inspector.openInspector(); });
+      // El inspector pone la clase "aframe-inspector-opened" en <body>: con eso se
+      // esconde la interfaz (ver style.css) y el juego deja de escuchar el teclado.
+      // Al cerrarlo, los choques se recalculan con las piezas donde quedaron.
+      new MutationObserver(() => {
+        const abierto = document.body.classList.contains('aframe-inspector-opened');
+        if (abierto === TECNO.inspectorAbierto) return;
+        TECNO.inspectorAbierto = abierto;
+        if (!abierto) {
+          if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
+          if (E) E.solidos.forEach(s => { if (s.obj) medirSolido(s); });
+        }
+      }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
       ui.dialogo.addEventListener('click', () => TECNO.dialogo.avanzar());
 
       // teclado (las teclas de caminar las lee el componente jugador)
       window.addEventListener('keydown', e => {
+        if (TECNO.inspectorAbierto) return;   // el inspector usa sus propias teclas
+        if (TECNO.enCinematica) {        // durante la cinemática solo sirve saltarla
+          if ((e.code === 'Escape' || e.code === 'Space' || e.code === 'Enter') && ajustesCinematica().saltable !== false) { e.preventDefault(); TECNO.saltarCinematica(); }
+          return;
+        }
         if (e.target.tagName === 'INPUT' || !ui.inicio.classList.contains('oculto')) return;
         const D = TECNO.dialogo;
         if (e.code === 'Escape') { if (D.abierto) D.cerrar(); else Interfaz.panel(!TECNO.panelAbierto); return; }
@@ -1365,6 +1747,7 @@
           return;
         }
         if (e.code === 'KeyM') Sonido.alternarSilencio();
+        if (e.code === 'KeyP') Interfaz.pantallaCompleta();
         if (e.code === 'KeyH') document.body.classList.toggle('sin-hud');
         if (e.code === 'KeyF') { ui.verFps.checked = !ui.verFps.checked; ui.fps.classList.toggle('visible', ui.verFps.checked); }
         if (e.code === 'KeyQ') {
@@ -1376,6 +1759,13 @@
       });
 
       Interfaz.joystick();
+    },
+    // Entra o sale de pantalla completa. Se pide para <html> (toda la página),
+    // no para el lienzo 3D: si no, la interfaz quedaría afuera.
+    pantallaCompleta() {
+      if (!document.fullscreenEnabled) return;
+      if (document.fullscreenElement) document.exitFullscreen();
+      else document.documentElement.requestFullscreen().catch(err => TECNO.aviso('No se pudo entrar a pantalla completa: ' + err.message));
     },
     panel(abrir) {
       TECNO.panelAbierto = abrir;
@@ -1459,6 +1849,12 @@
       if (viejo) viejo.detener();
     },
 
+    // Apaga la música actual con un fundido (la usa la cinemática)
+    callar() {
+      if (this.actual) this.actual.detener();
+      this.actual = null;
+    },
+
     // Música desde un archivo (mp3, ogg, wav…)
     pista(m) {
       const ctx = this.ctx, g = ctx.createGain(), vol = m.volumen ?? 1;
@@ -1533,12 +1929,152 @@
         const latir = () => { this.golpe(salida, 0); this.golpe(salida, 0.3); timerL = setTimeout(latir, 1400); };
         timerL = setTimeout(latir, 1000);
       }
+      // 6) capas de ambiente (grillos, cuervos, máquinas…): ver Sonido.capa
+      const capas = (p.capas || []).map(nombre => this.capa(nombre, salida, 1));
       return {
         detener: () => {
           const t = ctx.currentTime;
           salida.gain.cancelScheduledValues(t); salida.gain.setValueAtTime(salida.gain.value, t); salida.gain.linearRampToValueAtTime(0, t + 2.5);
           clearTimeout(timerC); clearTimeout(timerL);
+          capas.forEach(c => c.detener());
           setTimeout(() => { nodos.forEach(n => { try { n.stop(); } catch (e) { /* ya parado */ } }); salida.disconnect(); }, 2700);
+        },
+      };
+    },
+
+    /* CAPAS DE AMBIENTE: sonidos hechos con código que se suman a la música.
+       Se piden en config.js → musica[N].sinte.capas: ['grillos', 'cuervos']
+       o se ponen en un lugar del mundo con H.sonido({ pos, tipo }).
+       Tipos: grillos · cuervos · gaviotas · goteo · zumbido · maquinas ·
+              crujidos · chisporroteo · estatica · viento                     */
+    capa(tipo, destino, vol = 1) {
+      const ctx = this.ctx, nodos = [], cancelar = [];
+      let vivo = true;
+      const salida = ctx.createGain();
+      salida.gain.value = vol;
+      salida.connect(destino);
+      // repite fn() cada min–max segundos
+      const cada = (min, max, fn) => {
+        let h;
+        const tic = () => { if (!vivo) return; fn(ctx.currentTime); h = setTimeout(tic, (min + Math.random() * (max - min)) * 1000); };
+        h = setTimeout(tic, Math.random() * max * 1000);
+        cancelar.push(() => clearTimeout(h));
+      };
+      // un sonido corto colocado a la izquierda o a la derecha
+      const lado = (pan = Math.random() * 1.6 - 0.8) => {
+        if (!ctx.createStereoPanner) return salida;
+        const s = ctx.createStereoPanner(); s.pan.value = pan; s.connect(salida); return s;
+      };
+      const envolvente = (g, t, ataque, pico, caida) => {
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(pico, t + ataque);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + ataque + caida);
+      };
+      const ruido = () => { const r = ctx.createBufferSource(); r.buffer = this.bufferRuido; r.loop = true; return r; };
+      const filtro = (tipoF, f, q = 1) => { const b = ctx.createBiquadFilter(); b.type = tipoF; b.frequency.value = f; b.Q.value = q; return b; };
+
+      switch (tipo) {
+        case 'grillos':          // chirridos agudos en grupos de tres
+          cada(0.3, 1.6, t => {
+            const o = ctx.createOscillator(), g = ctx.createGain();
+            o.frequency.value = 4200 + Math.random() * 800;
+            o.connect(g); g.connect(lado());
+            g.gain.setValueAtTime(0, t);
+            for (let k = 0; k < 3; k++) { g.gain.linearRampToValueAtTime(0.025, t + k * 0.05 + 0.005); g.gain.linearRampToValueAtTime(0, t + k * 0.05 + 0.03); }
+            o.start(t); o.stop(t + 0.2);
+          });
+          break;
+        case 'cuervos':          // graznidos lejanos
+          cada(6, 16, t => {
+            const n = 2 + (Math.random() * 2 | 0), p = lado();
+            for (let k = 0; k < n; k++) {
+              const t0 = t + k * 0.42, o = ctx.createOscillator(), g = ctx.createGain(), bp = filtro('bandpass', 950, 2.5);
+              o.type = 'sawtooth'; o.frequency.setValueAtTime(560, t0); o.frequency.exponentialRampToValueAtTime(390, t0 + 0.24);
+              o.connect(bp); bp.connect(g); g.connect(p); g.connect(this.eco);
+              envolvente(g, t0, 0.02, 0.09, 0.26); o.start(t0); o.stop(t0 + 0.32);
+            }
+          });
+          break;
+        case 'gaviotas':         // llamadas que bajan de tono
+          cada(7, 18, t => {
+            const p = lado();
+            for (let k = 0; k < 2; k++) {
+              const t0 = t + k * 0.5, o = ctx.createOscillator(), g = ctx.createGain(), vib = ctx.createOscillator(), vg = ctx.createGain();
+              o.frequency.setValueAtTime(1750, t0); o.frequency.exponentialRampToValueAtTime(1050, t0 + 0.38);
+              vib.frequency.value = 18; vg.gain.value = 45; vib.connect(vg); vg.connect(o.frequency);
+              o.connect(g); g.connect(p); g.connect(this.eco);
+              envolvente(g, t0, 0.03, 0.035, 0.38); o.start(t0); o.stop(t0 + 0.45); vib.start(t0); vib.stop(t0 + 0.45);
+            }
+          });
+          break;
+        case 'goteo':            // gotas de agua
+          cada(0.7, 3.2, t => {
+            const o = ctx.createOscillator(), g = ctx.createGain();
+            o.frequency.setValueAtTime(650 + Math.random() * 300, t); o.frequency.exponentialRampToValueAtTime(1500 + Math.random() * 500, t + 0.05);
+            o.connect(g); g.connect(lado()); g.connect(this.eco);
+            envolvente(g, t, 0.003, 0.06, 0.12); o.start(t); o.stop(t + 0.18);
+          });
+          break;
+        case 'zumbido': {        // electricidad: 60 Hz y armónicos, con cortes
+          const bp = filtro('bandpass', 220, 0.6), g = ctx.createGain();
+          g.gain.value = 1; bp.connect(g); g.connect(salida);
+          [[60, 'sawtooth', 0.025], [120, 'sine', 0.02], [180, 'sawtooth', 0.008]].forEach(([f, forma, a]) => {
+            const o = ctx.createOscillator(), og = ctx.createGain();
+            o.type = forma; o.frequency.value = f; og.gain.value = a; o.connect(og); og.connect(bp); o.start(); nodos.push(o);
+          });
+          cada(2, 7, t => { g.gain.setValueAtTime(0.15, t); g.gain.setValueAtTime(1, t + 0.05 + Math.random() * 0.15); });
+          break;
+        }
+        case 'maquinas':         // golpe metálico rítmico, lejano
+          cada(1.5, 1.7, t => {
+            const r = ruido(), bp = filtro('bandpass', 170, 3), g = ctx.createGain();
+            r.connect(bp); bp.connect(g); g.connect(salida); envolvente(g, t, 0.005, 0.35, 0.28); r.start(t); r.stop(t + 0.35);
+            [1240, 1873].forEach(f => {
+              const o = ctx.createOscillator(), og = ctx.createGain();
+              o.frequency.value = f; o.connect(og); og.connect(salida); og.connect(this.eco);
+              envolvente(og, t + 0.01, 0.002, 0.012, 0.7); o.start(t); o.stop(t + 0.8);
+            });
+          });
+          break;
+        case 'crujidos':         // metal que se queja
+          cada(8, 20, t => {
+            const o = ctx.createOscillator(), lfo = ctx.createOscillator(), lg = ctx.createGain(), bp = filtro('bandpass', 620, 7), g = ctx.createGain();
+            o.type = 'sawtooth'; o.frequency.value = 60 + Math.random() * 40;
+            lfo.frequency.value = 6 + Math.random() * 5; lg.gain.value = 22; lfo.connect(lg); lg.connect(o.frequency);
+            o.connect(bp); bp.connect(g); g.connect(lado()); g.connect(this.eco);
+            envolvente(g, t, 0.35, 0.12, 1.4); o.start(t); o.stop(t + 1.9); lfo.start(t); lfo.stop(t + 1.9);
+          });
+          break;
+        case 'chisporroteo':     // chispas eléctricas
+          cada(0.04, 0.5, t => {
+            const r = ruido(), hp = filtro('highpass', 2200), g = ctx.createGain();
+            r.connect(hp); hp.connect(g); g.connect(salida);
+            envolvente(g, t, 0.001, 0.05 + Math.random() * 0.2, 0.02 + Math.random() * 0.04); r.start(t, Math.random()); r.stop(t + 0.1);
+          });
+          break;
+        case 'estatica': {       // televisión sin señal
+          const r = ruido(), bp = filtro('bandpass', 3200, 0.4), g = ctx.createGain(), lfo = ctx.createOscillator(), lg = ctx.createGain();
+          g.gain.value = 0.05; lfo.frequency.value = 9; lg.gain.value = 0.015;
+          lfo.connect(lg); lg.connect(g.gain); r.connect(bp); bp.connect(g); g.connect(salida);
+          r.start(); lfo.start(); nodos.push(r, lfo);
+          break;
+        }
+        case 'viento': {         // ráfagas graves
+          const r = ruido(), lp = filtro('lowpass', 380, 0.8), g = ctx.createGain(), lfo = ctx.createOscillator(), lg = ctx.createGain();
+          g.gain.value = 0.12; lfo.frequency.value = 0.07; lg.gain.value = 0.09;
+          lfo.connect(lg); lg.connect(g.gain); r.connect(lp); lp.connect(g); g.connect(salida);
+          r.start(); lfo.start(); nodos.push(r, lfo);
+          break;
+        }
+        default: console.warn('No existe la capa de sonido', tipo);
+      }
+      return {
+        salida,
+        detener: () => {
+          vivo = false;
+          cancelar.forEach(f => f());
+          salida.gain.setTargetAtTime(0, ctx.currentTime, 0.3);
+          setTimeout(() => { nodos.forEach(n => { try { n.stop(); } catch (e) { /* ya parado */ } }); salida.disconnect(); }, 1600);
         },
       };
     },
@@ -1670,6 +2206,17 @@
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     pmrem = new THREE.PMREMGenerator(renderer);
+    // Si algo falla al dibujar un cuadro, se avisa en la consola pero el juego
+    // sigue (sin esto, un solo error detiene el dibujo para siempre).
+    const protegerDibujo = () => {
+      let avisado = false;
+      renderer.setAnimationLoop((t, frame) => {
+        try { escena.render(t, frame); } catch (err) {
+          if (!avisado) { console.error('Error al dibujar un cuadro (el juego sigue):', err); avisado = true; }
+        }
+      });
+    };
+    if (escena.renderStarted) protegerDibujo(); else escena.addEventListener('renderstart', protegerDibujo);
     escena.object3D.fog = new THREE.FogExp2(0x000000, 0.02);
     Interfaz.iniciar();
     TECNO.aplicarCalidad(leer('tecno-calidad') || CONFIG.calidadInicial, false);

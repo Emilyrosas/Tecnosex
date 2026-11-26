@@ -33,11 +33,13 @@
       const [tx, tz] = A.centroTorre, R = A.radioTorre, Ht = A.alturaTorre;
 
       // 1 · LUCES: el sol está detrás de la torre (te tapa su sombra) ────
+      H.seccion('1 · Luces');
       H.luzHemisferio('#b8cdc4', '#3a4440', 1.8);
       H.luzAmbiente('#3c4846', 0.7);
       H.luzSol('#d8eee4', 1.8, [0.3, 1, -0.8], { sombra: true, area: 45, centro: [0, 0, -12] });
 
       // 2 · EL SUELO: placas tecnológicas y "ciudad" de bloques bajos ────
+      H.seccion('2 · El suelo');
       H.plano({ ancho: 500, alto: 500, rot: [-90, 0, 0], textura: 'panel', repetir: [90, 90], color: '#8a9894', rugosidad: 0.8, metal: 0.3 });
       const bloques = [];
       let intentos = 0;
@@ -47,7 +49,7 @@
         const an = H.azar(0.8, 6), al = H.azar(0.2, 2.5) * (Math.hypot(x, z) / 60 + 0.5), fo = H.azar(0.8, 6);
         bloques.push({ pos: [x, al / 2, z], esc: [an, al, fo], color: new THREE.Color('#3b4542').offsetHSL(0, 0, H.azar(-0.06, 0.06)) });
       }
-      H.instancias(H.geo.caja(), H.mat({ textura: 'panel', color: '#ffffff', rugosidad: 0.8, metal: 0.3 }), bloques);
+      H.instancias(H.geo.caja(), H.mat({ textura: 'panel', color: '#ffffff', rugosidad: 0.8, metal: 0.3 }), bloques, { masa: true, nombre: 'ciudad de bloques' });
       // pedestales en la plaza (sólidos)
       for (const [x, z, an, al] of [[-12, 4, 3, 1.2], [13, -6, 4, 0.8], [-9, -16, 2.5, 2], [11, 12, 2, 1.5]]) H.caja({ ancho: an, alto: al, fondo: an, pos: [x, al / 2, z], textura: 'panel', color: '#6a7673', solido: true });
       // luces en el piso que llevan a la puerta
@@ -56,7 +58,8 @@
       H.instancias(H.geo.caja({ ancho: 0.3, alto: 0.04, fondo: 0.9 }), H.mat({ basico: true, color: A.colorVentanas }), guias);
 
       // 3 · LA TORRE ──────────────────────────────────────────────────────
-      const torre = H.grupo({ pos: [tx, 0, tz] });
+      H.seccion('3 · La torre');
+      const torre = H.grupo({ pos: [tx, 0, tz], nombre: 'torre' });
       const metal = H.mat({ textura: 'metal', repetir: [8, 60], color: '#59625f', metal: 0.75, rugosidad: 0.45 });
       H.cilindro({ padre: torre, radio: R, alto: Ht, lados: 48, pos: [0, Ht / 2, 0], mat: metal });                    // núcleo
       H.cilindro({ padre: torre, radioArriba: R + 0.5, radioAbajo: R + 6, alto: 14, lados: 48, pos: [0, 7, 0], mat: metal });  // base ensanchada
@@ -66,7 +69,7 @@
         const a = i / A.costillas * Math.PI * 2;
         costillas.push({ pos: [Math.cos(a) * (R + 0.5), Ht / 2, Math.sin(a) * (R + 0.5)], rot: [0, -a * 180 / Math.PI, 0] });
       }
-      H.instancias(H.geo.caja({ ancho: 1.6, alto: Ht, fondo: 0.7 }), metal, costillas, { padre: torre });
+      H.instancias(H.geo.caja({ ancho: 1.6, alto: Ht, fondo: 0.7, nombre: 'costilla' }), metal, costillas, { padre: torre });
       // anillos cada N metros
       const anillos = [];
       for (let y = 20; y < Ht; y += A.anillosCada) anillos.push({ pos: [0, y, 0], rot: [90, 0, 0] });
@@ -75,24 +78,24 @@
       const vertebra = H.fusionar([
         H.geo.esfera({ radio: 1, lados: 10, esc: [1.1, 0.55, 0.9] }),
         H.geo.cono({ radio: 0.35, alto: 1.4, lados: 6, rot: [0, 0, -90], pos: [0.9, 0, 0] }),
-      ]);
+      ], { unir: true, nombre: 'vertebra' });
       const vertebras = [];
       for (let k = 0; k < 8; k++) {
         const a = (k + 0.5) / 8 * Math.PI * 2;
         for (let y = 16; y < 160; y += 2.6) vertebras.push({ pos: [Math.cos(a) * (R + 1.6), y, Math.sin(a) * (R + 1.6)], rot: [0, -a * 180 / Math.PI, 0], esc: 0.9 + Math.sin(y * 0.3) * 0.15 });
       }
-      H.instancias(vertebra, H.mat({ color: '#8b8a7e', metal: 0.4, rugosidad: 0.55 }), vertebras, { padre: torre });
+      H.instancias(vertebra, H.mat({ color: '#8b8a7e', metal: 0.4, rugosidad: 0.55 }), vertebras, { padre: torre, masa: true, nombre: 'vertebras' });
       // tubos que suben
       const tubos = [];
       for (let k = 0; k < 14; k++) { const a = H.azar(0, Math.PI * 2); tubos.push(H.geo.cilindro({ radio: H.azar(0.15, 0.4), alto: Ht, lados: 8, pos: [Math.cos(a) * (R + 0.9), Ht / 2, Math.sin(a) * (R + 0.9)] })); }
-      H.malla(H.fusionar(tubos), H.mat({ color: '#2b302f', metal: 0.8, rugosidad: 0.35 }), { padre: torre });
+      H.malla(H.fusionar(tubos, { nombre: 'tubos' }), H.mat({ color: '#2b302f', metal: 0.8, rugosidad: 0.35 }), { padre: torre });
       // rendijas de luz
       const ventanas = [];
       for (let i = 0; i < H.cantidad(A.ventanas); i++) {
         const a = H.azar(0, Math.PI * 2), y = H.azar(16, 260);
         ventanas.push({ pos: [Math.cos(a) * (R + 0.05), y, Math.sin(a) * (R + 0.05)], rot: [0, -a * 180 / Math.PI + 90, 0] });
       }
-      H.instancias(H.geo.caja({ ancho: 0.25, alto: 1.4, fondo: 0.1 }), H.mat({ basico: true, color: A.colorVentanas }), ventanas, { padre: torre });
+      H.instancias(H.geo.caja({ ancho: 0.25, alto: 1.4, fondo: 0.1 }), H.mat({ basico: true, color: A.colorVentanas }), ventanas, { padre: torre, masa: true, nombre: 'ventanas' });
       // luces rojas de advertencia (parpadean)
       const alertas = [];
       for (let y = 40; y < 260; y += 40) for (let k = 0; k < 4; k++) {
@@ -106,19 +109,21 @@
       for (const x of [-3.4, 3.4]) { puerta.push(H.geo.caja({ ancho: 1.6, alto: 16, fondo: 6, pos: [x, 8, 0] })); H.solido(x, -29.5, 1.8, 6); }
       puerta.push(H.geo.caja({ ancho: 8.4, alto: 2, fondo: 6, pos: [0, 15, 0] }));
       puerta.push(H.geo.caja({ ancho: 5.2, alto: 8, fondo: 0.4, pos: [0, 4, -2.6] }));
-      H.malla(H.fusionar(puerta), metal, { pos: [0, 0, -29.5] });
+      H.malla(H.fusionar(puerta, { nombre: 'puerta' }), metal, { pos: [0, 0, -29.5] });
       H.portal({ destino: 5, pos: [0, 0, -27.9], etiqueta: 'Entrar', color: '#aefcf0', velo: '#000000', ancho: 4.6, alto: 7, radio: 1.8 });
 
       // 4 · OTRAS TORRES a lo lejos (siluetas con ventanas encendidas) ───
+      H.seccion('4 · Otras torres a lo lejos');
       const lejanas = [];
       for (let i = 0; i < 12; i++) {
         const a = i / 12 * Math.PI * 2 + H.azar(-0.2, 0.2), r = H.azar(150, 260);
         const an = H.azar(14, 36), al = H.azar(140, 380);
         lejanas.push(H.geo.caja({ ancho: an, alto: al, fondo: an * H.azar(0.6, 1.2), pos: [Math.cos(a) * r, al / 2, Math.sin(a) * r - 40] }));
       }
-      H.malla(H.fusionar(lejanas), H.mat({ textura: 'ventanas', repetir: [3, 30], mapaEmisivo: true, emisivo: '#9ff5e0', brillo: 1.2, color: '#3a4644', rugosidad: 0.9 }));
+      H.malla(H.fusionar(lejanas, { nombre: 'torres lejanas' }), H.mat({ textura: 'ventanas', repetir: [3, 30], mapaEmisivo: true, emisivo: '#9ff5e0', brillo: 1.2, color: '#3a4644', rugosidad: 0.9 }));
 
       // 5 · NUBES (dos capas que se mueven) y CENIZA ─────────────────────
+      H.seccion('5 · Nubes');
       const capas = [A.alturaNubes, A.alturaNubes - 35].map((y, k) =>
         H.plano({ ancho: 900, alto: 900, rot: [90, 0, 0], pos: [0, y, -40], textura: 'nubes', repetir: [3, 3], color: '#8a9a94', transparente: true, opacidad: k ? 0.55 : 0.9, doble: true }));
       H.animar((t, dt) => { capas.forEach((c, k) => { c.material.map.offset.x += dt * (0.004 + k * 0.003); }); });
